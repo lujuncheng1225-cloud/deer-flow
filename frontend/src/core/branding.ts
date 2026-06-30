@@ -1,4 +1,5 @@
 export const PRODUCT_DISPLAY_NAME = "美图商业化 aios";
+export const PRODUCT_SHORT_MARK = "MT";
 
 const DISPLAY_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bDeerFlow\b/g, PRODUCT_DISPLAY_NAME],
