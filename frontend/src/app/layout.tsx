@@ -8,8 +8,8 @@ import { I18nProvider } from "@/core/i18n/context";
 import { detectLocaleServer } from "@/core/i18n/server";
 
 export const metadata: Metadata = {
-  title: "DeerFlow",
-  description: "A LangChain-based framework for building super agents.",
+  title: "美图商业化 aios",
+  description: "面向商业化调研与知识沉淀的超级智能体。",
 };
 
 export default async function RootLayout({

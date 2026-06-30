@@ -1,5 +1,7 @@
 import type { Message } from "@langchain/langgraph-sdk";
 
+import { brandDisplayText } from "@/core/branding";
+
 import type { AgentThread, AgentThreadContext } from "./types";
 
 export type ChannelThreadSource = {
@@ -56,7 +58,7 @@ export function textOfMessage(message: Message) {
 }
 
 export function titleOfThread(thread: AgentThread) {
-  return thread.values?.title ?? "Untitled";
+  return brandDisplayText(thread.values?.title ?? "Untitled");
 }
 
 const CHANNEL_PROVIDER_LABELS: Record<string, string> = {

@@ -33,6 +33,7 @@ import {
   type FeedbackData,
 } from "@/core/api/feedback";
 import { resolveArtifactURL } from "@/core/artifacts/utils";
+import { brandDisplayText } from "@/core/branding";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   extractContentFromMessage,
@@ -294,6 +295,9 @@ function MessageContent_({
 
   const rawContent = extractContentFromMessage(message);
   const reasoningContent = extractReasoningContentFromMessage(message);
+  const reasoningContentToDisplay = reasoningContent
+    ? brandDisplayText(reasoningContent)
+    : "";
 
   const files = useMemo(() => {
     const files = message.additional_kwargs?.files;
@@ -311,7 +315,7 @@ function MessageContent_({
     if (isHuman) {
       return rawContent ? stripUploadedFilesTag(rawContent) : "";
     }
-    return rawContent ?? "";
+    return brandDisplayText(rawContent ?? "");
   }, [rawContent, isHuman]);
 
   const filesList =
@@ -346,7 +350,7 @@ function MessageContent_({
           onTurnDurationChange={handleDurationChange}
         >
           <ReasoningTrigger />
-          <SafeReasoningContent>{reasoningContent}</SafeReasoningContent>
+          <SafeReasoningContent>{reasoningContentToDisplay}</SafeReasoningContent>
         </Reasoning>
       </AIElementMessageContent>
     );
@@ -389,7 +393,9 @@ function MessageContent_({
           >
             <ReasoningTrigger hasContent={!!reasoningContent} />
             {reasoningContent && (
-              <SafeReasoningContent>{reasoningContent}</SafeReasoningContent>
+              <SafeReasoningContent>
+                {reasoningContentToDisplay}
+              </SafeReasoningContent>
             )}
           </Reasoning>
         )}

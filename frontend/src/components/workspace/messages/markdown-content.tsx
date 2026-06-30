@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { AnchorHTMLAttributes } from "react";
 
 import { type ClipboardSafeStreamdownProps } from "@/components/ai-elements/streamdown";
+import { brandDisplayText } from "@/core/branding";
 import {
   preprocessStreamdownMarkdown,
   streamdownPluginsWithoutRawHtml,
@@ -36,7 +37,7 @@ export function MarkdownContent({
   components: componentsFromProps,
 }: MarkdownContentProps) {
   const normalizedContent = useMemo(
-    () => preprocessStreamdownMarkdown(content),
+    () => brandDisplayText(preprocessStreamdownMarkdown(content)),
     [content],
   );
   const effectiveRehypePlugins = useMemo(() => {

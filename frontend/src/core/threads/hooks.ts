@@ -1540,15 +1540,27 @@ export function useThreadHistory(
           run.run_id,
           beforeSeq,
         );
-        const result: RunMessagesPageResponse = await fetch(url, {
+        const response = await fetch(url, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
           },
           credentials: "include",
-        }).then((res) => {
-          return res.json();
         });
+        if (!response.ok) {
+          throw new Error(
+            await readResponseErrorMessage(
+              response,
+              "Failed to load run messages.",
+            ),
+          );
+        }
+        const result = (await response
+          .json()
+          .catch(() => null)) as RunMessagesPageResponse | null;
+        if (!result || !Array.isArray(result.data)) {
+          throw new Error("Run messages response is not valid JSON.");
+        }
         if (
           loadGenerationRef.current !== loadGeneration ||
           threadIdRef.current !== requestThreadId
@@ -1590,7 +1602,7 @@ export function useThreadHistory(
         );
       } while (pendingLoadRef.current);
     } catch (err) {
-      console.error(err);
+      console.warn(getStreamErrorMessage(err));
     } finally {
       if (loadGenerationRef.current === loadGeneration) {
         loadingRef.current = false;
