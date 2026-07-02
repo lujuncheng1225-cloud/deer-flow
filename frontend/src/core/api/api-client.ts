@@ -62,6 +62,26 @@ export function isInactiveRunStreamError(error: unknown): boolean {
   );
 }
 
+export function isActiveRunConflictError(error: unknown): boolean {
+  const status =
+    typeof error === "object" && error !== null
+      ? Reflect.get(error, "status")
+      : undefined;
+  const message =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : typeof error === "object" && error !== null
+          ? String(Reflect.get(error, "message") ?? "")
+          : "";
+
+  return (
+    (status === 409 || message.includes("HTTP 409")) &&
+    message.includes("already has an active run")
+  );
+}
+
 export function clearReconnectRun(
   threadId: string | null | undefined,
   runId: string,

@@ -14,7 +14,7 @@ import { toast } from "sonner";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 
-import { getAPIClient } from "../api";
+import { getAPIClient, isActiveRunConflictError } from "../api";
 import { fetch } from "../api/fetcher";
 import { getBackendBaseURL } from "../config";
 import { useI18n } from "../i18n/hooks";
@@ -606,7 +606,13 @@ export function upsertThreadInInfiniteCache(
   );
 }
 
+const ACTIVE_RUN_CONFLICT_MESSAGE =
+  "当前对话仍有任务在运行，请等待当前任务结束，或点击停止后再发送。";
+
 function getStreamErrorMessage(error: unknown): string {
+  if (isActiveRunConflictError(error)) {
+    return ACTIVE_RUN_CONFLICT_MESSAGE;
+  }
   if (typeof error === "string" && error.trim()) {
     return error;
   }
@@ -775,6 +781,15 @@ export function useThreadStream({
 
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
+  const activeRunConflictNoticeRef = useRef(0);
+  const showActiveRunConflictNotice = useCallback(() => {
+    const now = Date.now();
+    if (now - activeRunConflictNoticeRef.current < 1500) {
+      return;
+    }
+    activeRunConflictNoticeRef.current = now;
+    toast(ACTIVE_RUN_CONFLICT_MESSAGE);
+  }, []);
 
   const thread = useStream<AgentThreadState>({
     client: getAPIClient(isMock),
@@ -931,6 +946,20 @@ export function useThreadStream({
       }
     },
     onError(error) {
+      if (isActiveRunConflictError(error)) {
+        setOptimisticMessages([]);
+        setOptimisticThreadId(null);
+        showActiveRunConflictNotice();
+        if (threadIdRef.current && !isMock) {
+          void queryClient.invalidateQueries({
+            queryKey: ["thread", threadIdRef.current],
+          });
+          void queryClient.invalidateQueries({
+            queryKey: threadTokenUsageQueryKey(threadIdRef.current),
+          });
+        }
+        return;
+      }
       setOptimisticMessages([]);
       setOptimisticThreadId(null);
       setLiveMessagesThreadId(null);
@@ -991,6 +1020,7 @@ export function useThreadStream({
   ).length;
   const latestMessageCountsRef = useRef({ humanMessageCount });
   const sendInFlightRef = useRef(false);
+  const streamLoadingRef = useRef(false);
   const messagesRef = useRef<Message[]>([]);
   // Synchronous bridge for messages rescued from context summarization. The
   // archived-history `setState` (via appendMessages) lands on a different
@@ -1018,6 +1048,7 @@ export function useThreadStream({
   useEffect(() => {
     startedRef.current = false;
     sendInFlightRef.current = false;
+    streamLoadingRef.current = false;
     messagesRef.current = [];
     pendingArchivedMessagesRef.current = [];
     pendingArchiveThreadIdRef.current = null;
@@ -1028,6 +1059,13 @@ export function useThreadStream({
     prevHumanMsgCountRef.current =
       latestMessageCountsRef.current.humanMessageCount;
   }, [threadId]);
+
+  useEffect(() => {
+    streamLoadingRef.current = thread.isLoading;
+    if (!thread.isLoading) {
+      sendInFlightRef.current = false;
+    }
+  }, [thread.isLoading]);
 
   // Release archive-buffer entries once the canonical history state has absorbed
   // them, so the synchronous bridge stays transient and never resurrects a
@@ -1090,7 +1128,8 @@ export function useThreadStream({
       extraContext?: Record<string, unknown>,
       options?: SendMessageOptions,
     ) => {
-      if (sendInFlightRef.current) {
+      if (sendInFlightRef.current || streamLoadingRef.current) {
+        showActiveRunConflictNotice();
         return;
       }
       sendInFlightRef.current = true;
@@ -1278,6 +1317,19 @@ export function useThreadStream({
       } catch (error) {
         setOptimisticMessages([]);
         setOptimisticThreadId(null);
+        if (isActiveRunConflictError(error)) {
+          setIsUploading(false);
+          showActiveRunConflictNotice();
+          if (threadId && !isMock) {
+            void queryClient.invalidateQueries({
+              queryKey: ["thread", threadId],
+            });
+            void queryClient.invalidateQueries({
+              queryKey: threadTokenUsageQueryKey(threadId),
+            });
+          }
+          return;
+        }
         setLiveMessagesThreadId(null);
         setIsUploading(false);
         throw error;
@@ -1292,6 +1344,8 @@ export function useThreadStream({
       queryClient,
       humanMessageCount,
       persistedMessages,
+      showActiveRunConflictNotice,
+      isMock,
     ],
   );
 
@@ -1301,7 +1355,15 @@ export function useThreadStream({
       messageId: string,
       supersededMessageIds: string[] = [messageId],
     ) => {
-      if (sendInFlightRef.current || !threadId || !messageId) {
+      if (
+        sendInFlightRef.current ||
+        streamLoadingRef.current ||
+        !threadId ||
+        !messageId
+      ) {
+        if (threadId && messageId) {
+          showActiveRunConflictNotice();
+        }
         return;
       }
       sendInFlightRef.current = true;
@@ -1384,7 +1446,12 @@ export function useThreadStream({
           queryKey: threadTokenUsageQueryKey(threadId),
         });
       } catch (error) {
-        setLiveMessagesThreadId(null);
+        if (isActiveRunConflictError(error)) {
+          showActiveRunConflictNotice();
+        } else {
+          setLiveMessagesThreadId(null);
+          toast.error(getStreamErrorMessage(error));
+        }
         if (preparedSupersededRunId) {
           const supersededRunId = preparedSupersededRunId;
           setPendingSupersededRunIds((current) =>
@@ -1394,12 +1461,18 @@ export function useThreadStream({
             removeSetItems(current, preparedSupersededMessageIds),
           );
         }
-        toast.error(getStreamErrorMessage(error));
       } finally {
         sendInFlightRef.current = false;
       }
     },
-    [context, humanMessageCount, persistedMessages, queryClient, thread],
+    [
+      context,
+      humanMessageCount,
+      persistedMessages,
+      queryClient,
+      showActiveRunConflictNotice,
+      thread,
+    ],
   );
 
   // Cache the latest thread messages in a ref to compare against incoming history messages for deduplication,

@@ -3,6 +3,7 @@ import { afterEach, expect, test, rs } from "@rstest/core";
 import {
   clearReconnectRun,
   getAPIClient,
+  isActiveRunConflictError,
   isInactiveRunStreamError,
 } from "@/core/api/api-client";
 
@@ -39,6 +40,19 @@ test("does not classify unrelated conflict errors as inactive streams", () => {
     status: 409,
   });
 
+  expect(isInactiveRunStreamError(error)).toBe(false);
+  expect(isActiveRunConflictError(error)).toBe(false);
+});
+
+test("identifies active run conflict errors separately from reconnect errors", () => {
+  const error = Object.assign(
+    new Error(
+      'HTTP 409: {"detail":"Thread thread-1 already has an active run"}',
+    ),
+    { status: 409 },
+  );
+
+  expect(isActiveRunConflictError(error)).toBe(true);
   expect(isInactiveRunStreamError(error)).toBe(false);
 });
 
