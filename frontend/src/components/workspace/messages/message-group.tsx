@@ -24,6 +24,7 @@ import {
 } from "@/components/ai-elements/chain-of-thought";
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Button } from "@/components/ui/button";
+import { ShineBorder } from "@/components/ui/shine-border";
 import { useI18n } from "@/core/i18n/hooks";
 import { formatTokenCount } from "@/core/messages/usage";
 import type { TokenDebugStep } from "@/core/messages/usage-model";
@@ -227,9 +228,16 @@ export function MessageGroup({
 
   return (
     <ChainOfThought
-      className={cn("w-full gap-2 rounded-lg border p-0.5", className)}
+      className={cn("relative w-full gap-2 rounded-lg border p-0.5", className)}
       open={true}
     >
+      <div className={cn("ambilight z-[-1]", isLoading ? "enabled" : "")} />
+      {isLoading && (
+        <ShineBorder
+          borderWidth={1.5}
+          shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]}
+        />
+      )}
       {aboveLastToolCallSteps.length > 0 && (
         <Button
           key="above"
