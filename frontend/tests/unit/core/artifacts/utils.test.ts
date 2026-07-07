@@ -72,5 +72,49 @@ describe("artifact URL helpers", () => {
     expect(
       resolveArtifactURL("/mnt/user-data/outputs/style.css", "thread-1"),
     ).toBe("/demo/threads/thread-1/user-data/outputs/style.css");
+    expect(
+      urlOfArtifact({
+        filepath: "1_1782357979311.jpg",
+        threadId: "thread-1",
+      }),
+    ).toBe("/demo/threads/thread-1/user-data/outputs/1_1782357979311.jpg");
+  });
+
+  test("normalizes present_files artifact paths before building backend URLs", async () => {
+    const { normalizeArtifactFilepath, resolveArtifactURL, urlOfArtifact } =
+      await loadFreshArtifactUtils();
+
+    expect(normalizeArtifactFilepath("1_1782357979311.jpg")).toBe(
+      "/mnt/user-data/outputs/1_1782357979311.jpg",
+    );
+    expect(
+      normalizeArtifactFilepath("mnt/user-data/outputs/1_1782357979311.jpg"),
+    ).toBe("/mnt/user-data/outputs/1_1782357979311.jpg");
+    expect(normalizeArtifactFilepath("outputs/1_1782357979311.jpg")).toBe(
+      "/mnt/user-data/outputs/1_1782357979311.jpg",
+    );
+
+    expect(
+      urlOfArtifact({
+        filepath: "1_1782357979311.jpg",
+        threadId: "thread-1",
+      }),
+    ).toBe(
+      "/api/threads/thread-1/artifacts/mnt/user-data/outputs/1_1782357979311.jpg",
+    );
+    expect(
+      urlOfArtifact({
+        filepath: "1_1782357979311.jpg",
+        threadId: "thread-1",
+        download: true,
+      }),
+    ).toBe(
+      "/api/threads/thread-1/artifacts/mnt/user-data/outputs/1_1782357979311.jpg?download=true",
+    );
+    expect(
+      resolveArtifactURL("1_1782357979311.jpg", "thread-1"),
+    ).toBe(
+      "/api/threads/thread-1/artifacts/mnt/user-data/outputs/1_1782357979311.jpg",
+    );
   });
 });

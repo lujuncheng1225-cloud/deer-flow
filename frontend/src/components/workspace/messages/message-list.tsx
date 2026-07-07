@@ -12,6 +12,7 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
 import { Button } from "@/components/ui/button";
+import { normalizeArtifactFilepath } from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   buildTokenDebugSteps,
@@ -42,7 +43,6 @@ import { cn } from "@/lib/utils";
 
 import { ArtifactFileList } from "../artifacts/artifact-file-list";
 import { CopyButton } from "../copy-button";
-import { StreamingIndicator } from "../streaming-indicator";
 import { Tooltip } from "../tooltip";
 
 import { MarkdownContent } from "./markdown-content";
@@ -450,7 +450,7 @@ export function MessageList({
             for (const message of group.messages) {
               if (hasPresentFiles(message)) {
                 const presentFiles = extractPresentFilesFromMessage(message);
-                files.push(...presentFiles);
+                files.push(...presentFiles.map(normalizeArtifactFilepath));
               }
             }
             return (
