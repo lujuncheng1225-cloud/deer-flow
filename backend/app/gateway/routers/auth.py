@@ -20,6 +20,14 @@ from app.gateway.auth import (
 )
 from app.gateway.auth.config import get_auth_config
 from app.gateway.auth.errors import AuthErrorCode, AuthErrorResponse
+from app.gateway.auth.meitu_oauth import (
+    MEITU_PROVIDER_ID,
+    MeituOAuthError,
+    MeituOAuthService,
+    build_meitu_authorization_url,
+    get_meitu_oauth_config,
+    get_or_provision_meitu_user,
+)
 from app.gateway.auth.oidc import OIDCError, OIDCService
 from app.gateway.auth.oidc_state import (
     OIDCStatePayload,
@@ -547,6 +555,17 @@ async def close_oidc_service() -> None:
     if service is not None:
         await service.close()
         delattr(_get_oidc_service, "_instance")
+    meitu_service = getattr(_get_meitu_oauth_service, "_instance", None)
+    if meitu_service is not None:
+        await meitu_service.close()
+        delattr(_get_meitu_oauth_service, "_instance")
+
+
+def _get_meitu_oauth_service() -> MeituOAuthService:
+    """Get (or create) the singleton Meitu OAuth service instance."""
+    if not hasattr(_get_meitu_oauth_service, "_instance"):
+        _get_meitu_oauth_service._instance = MeituOAuthService()  # type: ignore[attr-defined]
+    return _get_meitu_oauth_service._instance  # type: ignore[attr-defined]
 
 
 def _set_csrf_cookie(response: Response, request: Request) -> None:
@@ -593,18 +612,19 @@ async def list_auth_providers():
     app_config = get_app_config()
     oidc_config = app_config.auth.oidc
 
-    if not oidc_config.enabled:
-        return {"providers": []}
-
     providers = []
-    for provider_id, provider_cfg in oidc_config.providers.items():
-        providers.append(
-            {
-                "id": provider_id,
-                "display_name": provider_cfg.display_name,
-                "type": "oidc",
-            }
-        )
+    if get_meitu_oauth_config() is not None:
+        providers.append({"id": MEITU_PROVIDER_ID, "display_name": "Meitu OA", "type": "oauth"})
+
+    if oidc_config.enabled:
+        for provider_id, provider_cfg in oidc_config.providers.items():
+            providers.append(
+                {
+                    "id": provider_id,
+                    "display_name": provider_cfg.display_name,
+                    "type": "oidc",
+                }
+            )
     return {"providers": providers}
 
 
@@ -620,6 +640,9 @@ async def oauth_login(
     and PKCE parameters. The ``next`` query parameter specifies where to
     redirect after successful login (default: /workspace).
     """
+    if provider == MEITU_PROVIDER_ID:
+        return await _meitu_oauth_login(request, next)
+
     from deerflow.config.app_config import get_app_config
 
     app_config = get_app_config()
@@ -701,6 +724,9 @@ async def oauth_callback(
     the ID token, provisions/links the DeerFlow user, and sets the
     session cookie.
     """
+    if provider == MEITU_PROVIDER_ID:
+        return await _meitu_oauth_callback(request, code, state, error, error_description)
+
     from deerflow.config.app_config import get_app_config
 
     app_config = get_app_config()
@@ -801,6 +827,87 @@ async def oauth_callback(
     # Delete state cookie
     delete_state_cookie(redirect_response, request, provider)
 
+    return redirect_response
+
+
+async def _meitu_oauth_login(
+    request: Request,
+    next_param: str | None,
+) -> RedirectResponse:
+    config = get_meitu_oauth_config()
+    if config is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meitu OAuth is not enabled")
+
+    redirect_path = validate_next_param(next_param) or "/workspace"
+    state_value = generate_oidc_state()
+    auth_url = build_meitu_authorization_url(config, state_value)
+
+    state_payload = OIDCStatePayload(
+        provider=MEITU_PROVIDER_ID,
+        state=state_value,
+        next_path=redirect_path,
+    )
+    redirect_response = RedirectResponse(url=auth_url, status_code=status.HTTP_302_FOUND)
+    set_state_cookie(redirect_response, request, state_payload)
+    return redirect_response
+
+
+async def _meitu_oauth_callback(
+    request: Request,
+    code: str | None,
+    state: str | None,
+    error: str | None,
+    error_description: str | None,
+) -> RedirectResponse:
+    config = get_meitu_oauth_config()
+    if config is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meitu OAuth is not enabled")
+
+    if error:
+        logger.warning("Meitu OAuth provider returned error: %s (description: %s)", error, error_description)
+        redirect = _build_error_redirect(config.frontend_base_url, "sso_failed")
+        return RedirectResponse(url=redirect, status_code=status.HTTP_302_FOUND)
+
+    if not code or not state:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing code or state parameter")
+
+    state_payload = get_state_cookie(request, MEITU_PROVIDER_ID)
+    if not state_payload:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing or expired OAuth state cookie")
+
+    if not secrets.compare_digest(state_payload.state, state):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="OAuth state mismatch")
+
+    service = _get_meitu_oauth_service()
+    try:
+        identity = await service.authenticate_callback(config, code)
+    except MeituOAuthError as exc:
+        logger.error("Meitu OAuth callback authentication failed: %s", exc)
+        redirect = _build_error_redirect(config.frontend_base_url, "sso_failed")
+        return RedirectResponse(url=redirect, status_code=status.HTTP_302_FOUND)
+
+    try:
+        result = await get_or_provision_meitu_user(config, identity, get_local_provider())
+    except HTTPException as exc:
+        error_map = {
+            status.HTTP_403_FORBIDDEN: "sso_not_allowed",
+            status.HTTP_409_CONFLICT: "sso_account_exists",
+        }
+        error_code = error_map.get(exc.status_code, "sso_failed")
+        logger.warning("Meitu OAuth user provisioning failed for %s: %s", identity.email, exc.detail)
+        redirect = _build_error_redirect(config.frontend_base_url, error_code)
+        return RedirectResponse(url=redirect, status_code=status.HTTP_302_FOUND)
+
+    user = result["user"]
+    token = create_access_token(str(user.id), token_version=user.token_version)
+
+    redirect_target = state_payload.next_path or "/workspace"
+    frontend_base = config.frontend_base_url or ""
+    callback_redirect = f"{frontend_base}/auth/callback?next={urllib.parse.quote(redirect_target)}"
+    redirect_response = RedirectResponse(url=callback_redirect, status_code=status.HTTP_302_FOUND)
+    _set_session_cookie(redirect_response, token, request)
+    _set_csrf_cookie(redirect_response, request)
+    delete_state_cookie(redirect_response, request, MEITU_PROVIDER_ID)
     return redirect_response
 
 
