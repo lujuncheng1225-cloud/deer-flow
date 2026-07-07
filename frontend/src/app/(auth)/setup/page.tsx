@@ -16,6 +16,7 @@ import {
 import { parseAuthError } from "@/core/auth/types";
 
 type SetupMode = "loading" | "init_admin" | "change_password";
+type SsoProvider = { id: string; display_name: string; type: string };
 
 export default function SetupPage() {
   const router = useRouter();
@@ -29,6 +30,8 @@ export default function SetupPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [ssoProviders, setSsoProviders] = useState<SsoProvider[]>([]);
+  const [providersLoaded, setProvidersLoaded] = useState(false);
 
   // --- Change-password mode only ---
   const [currentPassword, setCurrentPassword] = useState("");
@@ -62,6 +65,32 @@ export default function SetupPage() {
       cancelled = true;
     };
   }, [isAuthenticated, user, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch("/api/v1/auth/providers")
+      .then((response) => response.json())
+      .then((data: { providers?: SsoProvider[] }) => {
+        if (!cancelled) {
+          setSsoProviders(data.providers ?? []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSsoProviders([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setProvidersLoaded(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ── Init-admin handler ─────────────────────────────────────────────
   const handleInitAdmin = async (e: React.SubmitEvent) => {
@@ -150,8 +179,9 @@ export default function SetupPage() {
   };
 
   const actualTheme = theme === "system" ? resolvedTheme : theme;
+  const shouldUseSsoSetup = providersLoaded && ssoProviders.length > 0;
 
-  if (mode === "loading") {
+  if (mode === "loading" || (mode === "init_admin" && !providersLoaded)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <p className="text-muted-foreground text-sm">Loading…</p>
@@ -174,58 +204,84 @@ export default function SetupPage() {
         <div className="border-border/20 bg-background/5 w-full max-w-md space-y-6 rounded-3xl border p-8 backdrop-blur-sm">
           <div className="text-center">
             <h1 className="font-serif text-3xl">美图商业化 aios</h1>
-            <p className="text-muted-foreground mt-2">Create admin account</p>
+            <p className="text-muted-foreground mt-2">
+              {shouldUseSsoSetup ? "Sign in with OA" : "Create admin account"}
+            </p>
             <p className="text-muted-foreground mt-1 text-xs">
-              Set up the administrator account to get started.
+              {shouldUseSsoSetup
+                ? "Use your Meitu OA account to continue."
+                : "Set up the administrator account to get started."}
             </p>
           </div>
-          <form onSubmit={handleInitAdmin} className="space-y-2">
-            <div className="flex flex-col space-y-1">
-              <label htmlFor="email" className="text-sm font-medium">
-                Email
-              </label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+          {shouldUseSsoSetup ? (
+            <div className="space-y-2">
+              {ssoProviders.map((provider) => (
+                <Button
+                  key={provider.id}
+                  type="button"
+                  className="w-full"
+                  disabled={loading}
+                  onClick={() => {
+                    setLoading(true);
+                    window.location.href = `/api/v1/auth/oauth/${provider.id}?next=${encodeURIComponent("/workspace")}`;
+                  }}
+                >
+                  Continue with {provider.display_name}
+                </Button>
+              ))}
             </div>
-            <div className="flex flex-col space-y-1">
-              <label htmlFor="password" className="text-sm font-medium">
-                Password
-              </label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Password (min. 8 characters)"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                minLength={8}
-              />
-            </div>
-            <div className="flex flex-col space-y-1">
-              <label htmlFor="confirmPassword" className="text-sm font-medium">
-                Confirm Password
-              </label>
-              <Input
-                id="confirmPassword"
-                type="password"
-                placeholder="Confirm password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                minLength={8}
-              />
-            </div>
-            {error && <p className="ms-1 text-sm text-red-500">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Creating account…" : "Create Admin Account"}
-            </Button>
-          </form>
+          ) : (
+            <form onSubmit={handleInitAdmin} className="space-y-2">
+              <div className="flex flex-col space-y-1">
+                <label htmlFor="email" className="text-sm font-medium">
+                  Email
+                </label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex flex-col space-y-1">
+                <label htmlFor="password" className="text-sm font-medium">
+                  Password
+                </label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Password (min. 8 characters)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                />
+              </div>
+              <div className="flex flex-col space-y-1">
+                <label
+                  htmlFor="confirmPassword"
+                  className="text-sm font-medium"
+                >
+                  Confirm Password
+                </label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="Confirm password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={8}
+                />
+              </div>
+              {error && <p className="ms-1 text-sm text-red-500">{error}</p>}
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? "Creating account…" : "Create Admin Account"}
+              </Button>
+            </form>
+          )}
         </div>
       </div>
     );
