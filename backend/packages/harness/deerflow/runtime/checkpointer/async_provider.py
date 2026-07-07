@@ -30,6 +30,7 @@ from deerflow.runtime.checkpointer.provider import (
     POSTGRES_INSTALL,
     SQLITE_INSTALL,
 )
+from deerflow.runtime.postgres_dsn import normalize_postgres_conn_string
 from deerflow.runtime.store._sqlite_utils import ensure_sqlite_parent_dir, resolve_sqlite_conn_str
 
 logger = logging.getLogger(__name__)
@@ -113,7 +114,7 @@ async def _async_checkpointer(config) -> AsyncIterator[Checkpointer]:
             raise ValueError(POSTGRES_CONN_REQUIRED)
 
         AsyncPostgresSaver, _ = _ensure_postgres_imports()
-        pool = _build_postgres_pool(config.connection_string)
+        pool = _build_postgres_pool(normalize_postgres_conn_string(config.connection_string))
         async with pool:
             saver = AsyncPostgresSaver(conn=pool)
             await saver.setup()
@@ -154,7 +155,7 @@ async def _async_checkpointer_from_database(db_config) -> AsyncIterator[Checkpoi
             raise ValueError("database.postgres_url is required for the postgres backend")
 
         AsyncPostgresSaver, _ = _ensure_postgres_imports()
-        pool = _build_postgres_pool(db_config.postgres_url)
+        pool = _build_postgres_pool(normalize_postgres_conn_string(db_config.postgres_url))
         async with pool:
             saver = AsyncPostgresSaver(conn=pool)
             await saver.setup()

@@ -29,6 +29,7 @@ from langgraph.store.base import BaseStore
 
 from deerflow.config.app_config import get_app_config
 from deerflow.config.checkpointer_config import ensure_config_loaded
+from deerflow.runtime.postgres_dsn import normalize_postgres_conn_string
 from deerflow.runtime.store._sqlite_utils import ensure_sqlite_parent_dir, resolve_sqlite_conn_str
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,8 @@ def _sync_store_cm(config) -> Iterator[BaseStore]:
         if not config.connection_string:
             raise ValueError(POSTGRES_CONN_REQUIRED)
 
-        with PostgresStore.from_conn_string(config.connection_string) as store:
+        conn_str = normalize_postgres_conn_string(config.connection_string)
+        with PostgresStore.from_conn_string(conn_str) as store:
             store.setup()
             logger.info("Store: using PostgresStore")
             yield store

@@ -24,6 +24,7 @@ from collections.abc import AsyncIterator
 from langgraph.store.base import BaseStore
 
 from deerflow.config.app_config import AppConfig, get_app_config
+from deerflow.runtime.postgres_dsn import normalize_postgres_conn_string
 from deerflow.runtime.store.provider import POSTGRES_CONN_REQUIRED, POSTGRES_STORE_INSTALL, SQLITE_STORE_INSTALL, ensure_sqlite_parent_dir, resolve_sqlite_conn_str
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,8 @@ async def _async_store(config) -> AsyncIterator[BaseStore]:
         if not config.connection_string:
             raise ValueError(POSTGRES_CONN_REQUIRED)
 
-        async with AsyncPostgresStore.from_conn_string(config.connection_string) as store:
+        conn_str = normalize_postgres_conn_string(config.connection_string)
+        async with AsyncPostgresStore.from_conn_string(conn_str) as store:
             await store.setup()
             logger.info("Store: using AsyncPostgresStore")
             yield store

@@ -28,6 +28,7 @@ from langgraph.types import Checkpointer
 
 from deerflow.config.app_config import get_app_config
 from deerflow.config.checkpointer_config import CheckpointerConfig, ensure_config_loaded
+from deerflow.runtime.postgres_dsn import normalize_postgres_conn_string
 from deerflow.runtime.store._sqlite_utils import ensure_sqlite_parent_dir, resolve_sqlite_conn_str
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ POSTGRES_INSTALL = (
     "langgraph-checkpoint-postgres is required for the PostgreSQL checkpointer. Install the package extra with: pip install 'deerflow-harness[postgres]' (or use: uv sync --all-packages --extra postgres when developing locally)"
 )
 POSTGRES_CONN_REQUIRED = "checkpointer.connection_string is required for the postgres backend"
+
 
 # ---------------------------------------------------------------------------
 # Sync factory
@@ -86,7 +88,8 @@ def _sync_checkpointer_cm(config: CheckpointerConfig) -> Iterator[Checkpointer]:
         if not config.connection_string:
             raise ValueError(POSTGRES_CONN_REQUIRED)
 
-        with PostgresSaver.from_conn_string(config.connection_string) as saver:
+        conn_str = normalize_postgres_conn_string(config.connection_string)
+        with PostgresSaver.from_conn_string(conn_str) as saver:
             saver.setup()
             logger.info("Checkpointer: using PostgresSaver")
             yield saver
