@@ -90,7 +90,11 @@ export default function LoginPage() {
     checked: setupStatusChecked,
     status: setupStatus,
   });
-  const systemNeedsAdminSetup = setupStatus?.needs_setup === true;
+  const localAuthEnabled = setupStatus?.local_auth_enabled !== false;
+  const systemNeedsAdminSetup =
+    localAuthEnabled &&
+    (setupStatus?.needs_local_admin_setup === true ||
+      setupStatus?.needs_setup === true);
 
   // Redirect if already authenticated (client-side, post-login)
   useEffect(() => {
@@ -150,6 +154,11 @@ export default function LoginPage() {
 
     if (!isLogin && !regularSignupAllowed) {
       setError(t.login.adminSetupRequiredDescription);
+      setLoading(false);
+      return;
+    }
+    if (!localAuthEnabled) {
+      setError("Local email/password authentication is disabled. Use SSO/OA login.");
       setLoading(false);
       return;
     }
@@ -231,49 +240,55 @@ export default function LoginPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-2">
-          <div className="flex flex-col space-y-1">
-            <label htmlFor="email" className="text-sm font-medium">
-              {t.login.email}
-            </label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={t.login.emailPlaceholder}
-              required
-            />
-          </div>
-          <div className="flex flex-col space-y-1">
-            <label htmlFor="password" className="text-sm font-medium">
-              {t.login.password}
-            </label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={t.login.passwordPlaceholder}
-              required
-              minLength={isLogin ? 6 : 8}
-            />
-          </div>
+        {localAuthEnabled && (
+          <form onSubmit={handleSubmit} className="space-y-2">
+            <div className="flex flex-col space-y-1">
+              <label htmlFor="email" className="text-sm font-medium">
+                {t.login.email}
+              </label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder={t.login.emailPlaceholder}
+                required
+              />
+            </div>
+            <div className="flex flex-col space-y-1">
+              <label htmlFor="password" className="text-sm font-medium">
+                {t.login.password}
+              </label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t.login.passwordPlaceholder}
+                required
+                minLength={isLogin ? 6 : 8}
+              />
+            </div>
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+            {error && <p className="text-sm text-red-500">{error}</p>}
 
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading
-              ? t.login.pleaseWait
-              : isLogin
-                ? t.login.signIn
-                : t.login.createAccount}
-          </Button>
-        </form>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading
+                ? t.login.pleaseWait
+                : isLogin
+                  ? t.login.signIn
+                  : t.login.createAccount}
+            </Button>
+          </form>
+        )}
+
+        {!localAuthEnabled && error && (
+          <p className="text-sm text-red-500">{error}</p>
+        )}
 
         {ssoProviders.length > 0 && (
           <div className="space-y-2">
-            {isLogin && (
+            {(isLogin || !localAuthEnabled) && (
               <div className="relative my-4">
                 <div className="absolute inset-0 flex items-center">
                   <span className="w-full border-t" />
@@ -307,7 +322,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        {regularSignupAllowed && (
+        {regularSignupAllowed && localAuthEnabled && (
           <div className="text-center text-sm">
             <button
               type="button"

@@ -154,7 +154,68 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class SetupStatusResponse(BaseModel):
+    """Authentication setup state for bootstrapping pages."""
+
+    needs_setup: bool
+    needs_local_admin_setup: bool
+    admin_exists: bool
+    auth_mode: str
+    local_auth_enabled: bool
+    oauth_login_available: bool
+    sso_login_available: bool
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────
+
+
+def _env_flag(name: str) -> bool:
+    value = os.getenv(name, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _local_auth_disabled() -> bool:
+    return any(
+        _env_flag(name)
+        for name in (
+            "LOCAL_AUTH_DISABLED",
+            "DEER_FLOW_LOCAL_AUTH_DISABLED",
+            "MEITU_OA_AUTH_REQUIRED",
+        )
+    )
+
+
+def _sso_login_available() -> bool:
+    if get_meitu_oauth_config() is not None:
+        return True
+
+    try:
+        from deerflow.config.app_config import get_app_config
+
+        oidc_config = get_app_config().auth.oidc
+    except Exception:
+        return False
+    return bool(oidc_config.enabled and oidc_config.providers)
+
+
+def _auth_mode(sso_available: bool) -> str:
+    if _local_auth_disabled():
+        return "oauth_only"
+    if sso_available:
+        return "mixed"
+    return "local"
+
+
+def _reject_local_auth_when_disabled() -> None:
+    if not _local_auth_disabled():
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=AuthErrorResponse(
+            code=AuthErrorCode.LOCAL_AUTH_DISABLED,
+            message="Local email/password authentication is disabled. Use SSO/OA login.",
+        ).model_dump(),
+    )
 
 
 def _set_session_cookie(response: Response, token: str, request: Request) -> None:
@@ -305,6 +366,7 @@ async def login_local(
     form_data: OAuth2PasswordRequestForm = Depends(),
 ):
     """Local email/password login."""
+    _reject_local_auth_when_disabled()
     client_ip = _get_client_ip(request)
     _check_rate_limit(client_ip)
 
@@ -334,6 +396,7 @@ async def register(request: Request, response: Response, body: RegisterRequest):
     The first admin is created explicitly through /initialize. This endpoint creates regular users.
     Auto-login by setting the session cookie.
     """
+    _reject_local_auth_when_disabled()
     try:
         user = await get_local_provider().create_user(email=body.email, password=body.password, system_role="user")
     except ValueError:
@@ -368,6 +431,7 @@ async def change_password(request: Request, response: Response, body: ChangePass
     from app.gateway.auth.password import hash_password_async, verify_password_async
     from app.gateway.auth_disabled import AUTH_SOURCE_AUTH_DISABLED
 
+    _reject_local_auth_when_disabled()
     user = await get_current_user_from_request(request)
 
     if getattr(request.state, "auth_source", None) == AUTH_SOURCE_AUTH_DISABLED:
@@ -435,9 +499,9 @@ _SETUP_STATUS_INFLIGHT: dict[str, asyncio.Task[dict]] = {}
 _SETUP_STATUS_INFLIGHT_GUARD = asyncio.Lock()
 
 
-@router.get("/setup-status")
+@router.get("/setup-status", response_model=SetupStatusResponse)
 async def setup_status(request: Request):
-    """Check if an admin account exists. Returns needs_setup=True when no admin exists."""
+    """Return auth setup state without forcing local admin setup in OAuth-only mode."""
     client_ip = _get_client_ip(request)
     now = time.time()
 
@@ -472,7 +536,19 @@ async def setup_status(request: Request):
 
             async def _compute_setup_status() -> dict:
                 admin_count = await get_local_provider().count_admin_users()
-                return {"needs_setup": admin_count == 0}
+                admin_exists = admin_count > 0
+                local_auth_enabled = not _local_auth_disabled()
+                sso_available = _sso_login_available()
+                needs_local_admin_setup = local_auth_enabled and not admin_exists
+                return {
+                    "needs_setup": needs_local_admin_setup,
+                    "needs_local_admin_setup": needs_local_admin_setup,
+                    "admin_exists": admin_exists,
+                    "auth_mode": _auth_mode(sso_available),
+                    "local_auth_enabled": local_auth_enabled,
+                    "oauth_login_available": sso_available,
+                    "sso_login_available": sso_available,
+                }
 
             task = asyncio.create_task(_compute_setup_status())
             _SETUP_STATUS_INFLIGHT[client_ip] = task
@@ -511,6 +587,7 @@ async def initialize_admin(request: Request, response: Response, body: Initializ
     On success, the admin account is created with ``needs_setup=False`` and
     the session cookie is set.
     """
+    _reject_local_auth_when_disabled()
     admin_count = await get_local_provider().count_admin_users()
     if admin_count > 0:
         raise HTTPException(

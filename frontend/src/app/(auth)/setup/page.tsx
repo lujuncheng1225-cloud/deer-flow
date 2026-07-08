@@ -12,6 +12,7 @@ import { useAuth } from "@/core/auth/AuthProvider";
 import {
   fetchSetupStatus,
   isSystemAlreadyInitializedError,
+  type SetupStatusResponse,
 } from "@/core/auth/setup";
 import { parseAuthError } from "@/core/auth/types";
 
@@ -44,9 +45,12 @@ export default function SetupPage() {
     } else if (!isAuthenticated) {
       // Check if the system has no users yet
       void fetchSetupStatus()
-        .then((data: { needs_setup?: boolean }) => {
+        .then((data: SetupStatusResponse) => {
           if (cancelled) return;
-          if (data.needs_setup) {
+          if (
+            data.needs_local_admin_setup ||
+            (data.auth_mode === "oauth_only" && data.oauth_login_available)
+          ) {
             setMode("init_admin");
           } else {
             // System already set up and user is not logged in — go to login

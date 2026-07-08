@@ -92,6 +92,14 @@ async def _ensure_admin_user(app: FastAPI) -> None:
     admin_count = await provider.count_admin_users()
 
     if admin_count == 0:
+        from app.gateway.routers.auth import _local_auth_disabled
+
+        if _local_auth_disabled():
+            logger.info("=" * 60)
+            logger.info("  OAuth-only authentication is enabled and no local admin account exists.")
+            logger.info("  Local admin bootstrap is disabled; users must sign in through SSO/OA.")
+            logger.info("=" * 60)
+            return
         logger.info("=" * 60)
         logger.info("  First boot detected — no admin account exists.")
         logger.info("  Visit /setup to complete admin account creation.")

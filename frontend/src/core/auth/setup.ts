@@ -2,6 +2,12 @@ import { parseAuthError } from "./types";
 
 export type SetupStatusResponse = {
   needs_setup?: boolean;
+  needs_local_admin_setup?: boolean;
+  admin_exists?: boolean;
+  auth_mode?: "local" | "mixed" | "oauth_only" | string;
+  local_auth_enabled?: boolean;
+  oauth_login_available?: boolean;
+  sso_login_available?: boolean;
 };
 
 export type SetupStatusCheck = {
@@ -30,5 +36,10 @@ export function isSystemAlreadyInitializedError(data: unknown): boolean {
 }
 
 export function canCreateRegularAccount(check: SetupStatusCheck): boolean {
-  return check.checked && check.status?.needs_setup !== true;
+  return (
+    check.checked &&
+    check.status?.local_auth_enabled !== false &&
+    check.status?.needs_local_admin_setup !== true &&
+    check.status?.needs_setup !== true
+  );
 }

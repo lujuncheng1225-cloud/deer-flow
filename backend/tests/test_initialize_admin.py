@@ -19,12 +19,21 @@ _TEST_SECRET = "test-secret-key-initialize-admin-min-32"
 
 
 @pytest.fixture(autouse=True)
-def _setup_auth(tmp_path):
+def _setup_auth(tmp_path, monkeypatch):
     """Fresh SQLite engine + auth config per test."""
     from app.gateway import deps
     from app.gateway.routers.auth import _SETUP_STATUS_CACHE, _SETUP_STATUS_INFLIGHT
     from deerflow.persistence.engine import close_engine, init_engine
 
+    for name in (
+        "LOCAL_AUTH_DISABLED",
+        "DEER_FLOW_LOCAL_AUTH_DISABLED",
+        "MEITU_OA_AUTH_REQUIRED",
+        "MEITU_OAUTH_APPID",
+        "MEITU_OAUTH_APPSECRET",
+        "MEITU_OAUTH_REDIRECT_URI",
+    ):
+        monkeypatch.delenv(name, raising=False)
     set_auth_config(AuthConfig(jwt_secret=_TEST_SECRET))
     url = f"sqlite+aiosqlite:///{tmp_path}/init_admin.db"
     asyncio.run(init_engine("sqlite", url=url, sqlite_dir=str(tmp_path)))
@@ -167,6 +176,9 @@ def test_setup_status_before_initialization(client):
     resp = client.get("/api/v1/auth/setup-status")
     assert resp.status_code == 200
     assert resp.json()["needs_setup"] is True
+    assert resp.json()["needs_local_admin_setup"] is True
+    assert resp.json()["auth_mode"] == "local"
+    assert resp.json()["local_auth_enabled"] is True
 
 
 def test_setup_status_after_initialization(client):
@@ -175,6 +187,8 @@ def test_setup_status_after_initialization(client):
     resp = client.get("/api/v1/auth/setup-status")
     assert resp.status_code == 200
     assert resp.json()["needs_setup"] is False
+    assert resp.json()["needs_local_admin_setup"] is False
+    assert resp.json()["admin_exists"] is True
 
 
 def test_setup_status_true_when_only_regular_user_exists(client):
@@ -183,6 +197,46 @@ def test_setup_status_true_when_only_regular_user_exists(client):
     resp = client.get("/api/v1/auth/setup-status")
     assert resp.status_code == 200
     assert resp.json()["needs_setup"] is True
+    assert resp.json()["needs_local_admin_setup"] is True
+    assert resp.json()["admin_exists"] is False
+
+
+def test_oauth_only_setup_status_does_not_require_local_admin(client, monkeypatch):
+    """OAuth-only deployments must not treat missing local admin as setup blockage."""
+    monkeypatch.setenv("MEITU_OA_AUTH_REQUIRED", "1")
+    monkeypatch.setenv("MEITU_OAUTH_APPID", "1291832")
+    monkeypatch.setenv("MEITU_OAUTH_APPSECRET", "unit-test-secret")
+    monkeypatch.setenv("MEITU_OAUTH_REDIRECT_URI", "https://example.com/api/v1/auth/callback/meitu")
+
+    resp = client.get("/api/v1/auth/setup-status")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["auth_mode"] == "oauth_only"
+    assert data["local_auth_enabled"] is False
+    assert data["oauth_login_available"] is True
+    assert data["admin_exists"] is False
+    assert data["needs_local_admin_setup"] is False
+    assert data["needs_setup"] is False
+
+
+def test_oauth_only_rejects_local_auth_entrypoints(client, monkeypatch):
+    """OAuth-only deployments reject direct local login/register/initialize calls."""
+    monkeypatch.setenv("MEITU_OA_AUTH_REQUIRED", "1")
+
+    register = client.post(
+        "/api/v1/auth/register",
+        json={"email": "regular@example.com", "password": "Tr0ub4dor3a"},
+    )
+    initialize = client.post("/api/v1/auth/initialize", json=_init_payload())
+    login = client.post(
+        "/api/v1/auth/login/local",
+        data={"username": "regular@example.com", "password": "Tr0ub4dor3a"},
+    )
+
+    for resp in (register, initialize, login):
+        assert resp.status_code == 403
+        assert resp.json()["detail"]["code"] == "local_auth_disabled"
 
 
 def test_setup_status_returns_cached_result_on_rapid_calls(client):
