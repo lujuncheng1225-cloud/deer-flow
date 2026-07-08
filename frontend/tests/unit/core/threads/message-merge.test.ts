@@ -3,6 +3,7 @@ import { expect, test } from "@rstest/core";
 
 import {
   buildRunMessagesUrl,
+  buildThreadMessagesUrl,
   buildVisibleHistoryMessages,
   computeSummarizationMovedMessages,
   findLatestUnloadedRunIndex,
@@ -18,6 +19,7 @@ import {
   resolvePreservedHistory,
   runMessagesPageHasMore,
   shouldAutoContinueOnEmptyRun,
+  sortRunMessagesByTimeline,
 } from "@/core/threads/hooks";
 import type { RunMessage } from "@/core/threads/types";
 
@@ -457,6 +459,143 @@ test("buildVisibleHistoryMessages filters superseded runs but keeps regenerated 
     newHuman,
     newAi,
   ]);
+});
+
+test("buildVisibleHistoryMessages orders cross-run history by global seq", () => {
+  const runAUser = {
+    id: "run-a-user",
+    type: "human",
+    content: "查询 whee 的竞品定价",
+  } as Message;
+  const runATool = {
+    id: "run-a-tool",
+    type: "ai",
+    content: "using competitor price tool",
+  } as Message;
+  const runBUser = {
+    id: "run-b-user",
+    type: "human",
+    content: "分析 whee 近一个月的付费收入数据变化",
+  } as Message;
+  const runBAi = {
+    id: "run-b-ai",
+    type: "ai",
+    content: "付费收入分析",
+  } as Message;
+  const rows: RunMessage[] = [
+    {
+      run_id: "run-b",
+      seq: 4,
+      content: runBAi,
+      metadata: { caller: "lead_agent" },
+      created_at: "2026-07-08T10:00:04Z",
+    },
+    {
+      run_id: "run-a",
+      seq: 2,
+      content: runATool,
+      metadata: { caller: "lead_agent" },
+      created_at: "2026-07-08T10:00:02Z",
+    },
+    {
+      run_id: "run-b",
+      seq: 3,
+      content: runBUser,
+      metadata: { caller: "user" },
+      created_at: "2026-07-08T10:00:03Z",
+    },
+    {
+      run_id: "run-a",
+      seq: 1,
+      content: runAUser,
+      metadata: { caller: "user" },
+      created_at: "2026-07-08T10:00:01Z",
+    },
+  ];
+
+  expect(
+    buildVisibleHistoryMessages(rows, new Set(), []).map((m) => m.id),
+  ).toEqual(["run-a-user", "run-a-tool", "run-b-user", "run-b-ai"]);
+});
+
+test("stopped live messages must be excluded before merge to avoid appending after canonical history", () => {
+  const canonicalHistory = [
+    {
+      id: "run-a-user",
+      type: "human",
+      content: "查询 whee 的竞品定价",
+    },
+    {
+      id: "run-a-tool",
+      type: "ai",
+      content: "using competitor price tool",
+    },
+    {
+      id: "run-b-user",
+      type: "human",
+      content: "分析 whee 近一个月的付费收入数据变化",
+    },
+    {
+      id: "run-b-ai",
+      type: "ai",
+      content: "付费收入分析",
+    },
+  ] as Message[];
+  const staleStoppedRunLiveMessage = {
+    id: "run-a-tool-late-buffer",
+    type: "ai",
+    content: "late buffered competitor price tool step",
+  } as Message;
+
+  expect(mergeMessages(canonicalHistory, [], [])).toEqual(canonicalHistory);
+  expect(
+    mergeMessages(canonicalHistory, [staleStoppedRunLiveMessage], []).map(
+      (m) => m.id,
+    ),
+  ).toEqual([
+    "run-a-user",
+    "run-a-tool",
+    "run-b-user",
+    "run-b-ai",
+    "run-a-tool-late-buffer",
+  ]);
+});
+
+test("sortRunMessagesByTimeline uses seq before created_at fallback", () => {
+  const newestWithoutSeq = {
+    run_id: "run-c",
+    content: { id: "no-seq", type: "ai", content: "" } as Message,
+    metadata: { caller: "lead_agent" },
+    created_at: "2026-07-08T10:00:00Z",
+  };
+  const first = {
+    run_id: "run-a",
+    seq: 1,
+    content: { id: "seq-1", type: "human", content: "" } as Message,
+    metadata: { caller: "user" },
+    created_at: "2026-07-08T10:00:03Z",
+  };
+  const second = {
+    run_id: "run-b",
+    seq: 2,
+    content: { id: "seq-2", type: "ai", content: "" } as Message,
+    metadata: { caller: "lead_agent" },
+    created_at: "2026-07-08T10:00:02Z",
+  };
+
+  expect(
+    sortRunMessagesByTimeline([newestWithoutSeq, second, first]).map(
+      (row) => row.content.id,
+    ),
+  ).toEqual(["seq-1", "seq-2", "no-seq"]);
+});
+
+test("buildThreadMessagesUrl points history loading at the canonical thread timeline", () => {
+  expect(
+    buildThreadMessagesUrl("https://api.example.test/", "thread 1", 42, 25),
+  ).toBe(
+    "https://api.example.test/api/threads/thread%201/messages?limit=25&before_seq=42",
+  );
 });
 
 test("loading runs in newest-first order and prepending pages yields chronological messages (regression for #3352)", () => {
