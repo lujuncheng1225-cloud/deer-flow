@@ -345,7 +345,7 @@ class TestConvenienceFields:
         from langchain_core.messages import HumanMessage, ToolMessage
 
         j, _ = journal_setup
-        j.on_chat_model_start({}, [[HumanMessage(content="Question")]], run_id=uuid4(), tags=["lead_agent"])
+        j.record_user_input_message(HumanMessage(content="Question"))
         j.on_llm_end(_make_llm_response("Answer"), run_id=uuid4(), parent_run_id=None, tags=["lead_agent"])
         j.on_tool_end(ToolMessage(content="Tool result", tool_call_id="call_1", name="search"), run_id=uuid4())
 
@@ -823,8 +823,25 @@ class TestChatModelStartHumanMessage:
     """Tests for on_chat_model_start extracting the first human message."""
 
     @pytest.mark.anyio
+    async def test_record_user_input_message_creates_ui_message(self, journal_setup):
+        """Raw run input, not model prompt input, is the UI-facing user message."""
+        from langchain_core.messages import HumanMessage
+
+        j, store = journal_setup
+        j.record_user_input_message(HumanMessage(content="What is AI?"))
+        await j.flush()
+
+        assert j._first_human_msg == "What is AI?"
+        assert j.get_completion_data()["message_count"] == 1
+        messages = await store.list_messages("t1")
+        assert len(messages) == 1
+        assert messages[0]["event_type"] == "run.human.input"
+        assert messages[0]["category"] == "message"
+        assert messages[0]["content"]["content"] == "What is AI?"
+
+    @pytest.mark.anyio
     async def test_extracts_first_human_message(self, journal_setup):
-        """on_chat_model_start captures the first HumanMessage from prompts."""
+        """on_chat_model_start keeps prompt-level HumanMessages out of UI history."""
         from langchain_core.messages import AIMessage, HumanMessage
 
         j, store = journal_setup
@@ -838,7 +855,9 @@ class TestChatModelStartHumanMessage:
         events = await store.list_events("t1", "r1")
         human_events = [e for e in events if e["event_type"] == "llm.human.input"]
         assert len(human_events) == 1
+        assert human_events[0]["category"] == "trace"
         assert human_events[0]["content"]["content"] == "What is AI?"
+        assert await store.list_messages("t1") == []
 
     @pytest.mark.anyio
     async def test_skips_summary_named_human_messages(self, journal_setup):
@@ -874,10 +893,11 @@ class TestChatModelStartHumanMessage:
         await j.flush()
 
         assert j._first_human_msg == "What is the weather today?"
-        assert j.get_completion_data()["message_count"] == 1
+        assert j.get_completion_data()["message_count"] == 0
         events = await store.list_events("t1", "r1")
         human_events = [e for e in events if e["event_type"] == "llm.human.input"]
         assert len(human_events) == 1
+        assert human_events[0]["category"] == "trace"
         assert human_events[0]["content"]["content"] == "What is the weather today?"
 
     @pytest.mark.anyio
@@ -918,10 +938,11 @@ class TestChatModelStartHumanMessage:
         await j.flush()
 
         assert j._first_human_msg == "Real question"
-        assert j.get_completion_data()["message_count"] == 1
+        assert j.get_completion_data()["message_count"] == 0
         events = await store.list_events("t1", "r1")
         human_events = [e for e in events if e["event_type"] == "llm.human.input"]
         assert len(human_events) == 1
+        assert human_events[0]["category"] == "trace"
         assert human_events[0]["content"]["content"] == "Real question"
 
     @pytest.mark.anyio
@@ -948,17 +969,18 @@ class TestChatModelStartHumanMessage:
         await j.flush()
 
         assert j._first_human_msg == "Real user follow-up"
-        assert j.get_completion_data()["message_count"] == 1
+        assert j.get_completion_data()["message_count"] == 0
         events = await store.list_events("t1", "r1")
         human_events = [e for e in events if e["event_type"] == "llm.human.input"]
         assert len(human_events) == 1
+        assert human_events[0]["category"] == "trace"
         assert human_events[0]["content"]["content"] == "Real user follow-up"
         assert human_events[0]["metadata"]["caller"] == "lead_agent"
 
     @pytest.mark.anyio
     @pytest.mark.parametrize("tags", [["middleware:summarize"], ["subagent:research"]])
     async def test_non_lead_human_prompts_are_not_captured_as_user_input(self, journal_setup, tags):
-        """Only lead-agent LLM starts create UI-facing human input events."""
+        """Only lead-agent LLM starts can populate fallback prompt-input traces."""
         from langchain_core.messages import HumanMessage
 
         j, store = journal_setup
@@ -989,6 +1011,7 @@ class TestChatModelStartHumanMessage:
         events = await store.list_events("t1", "r1")
         human_events = [e for e in events if e["event_type"] == "llm.human.input"]
         assert len(human_events) == 1
+        assert human_events[0]["category"] == "trace"
 
     @pytest.mark.anyio
     async def test_empty_messages_no_crash(self, journal_setup):

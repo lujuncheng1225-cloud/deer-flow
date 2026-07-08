@@ -17,8 +17,8 @@ the sole source of truth and its reversed order becomes observable.
 It writes through the gateway's OWN ``app.state.run_store`` +
 ``app.state.run_event_store`` using the request's auth context, so the seeded
 ``user_id`` matches the browser session that reads it back. The event shape
-mirrors exactly what ``runtime/journal.py`` writes for real runs
-(``event_type`` ``llm.human.input`` / ``llm.ai.response``, ``category``
+mirrors exactly what ``runtime/journal.py`` writes for real display messages
+(``event_type`` ``run.human.input`` / ``llm.ai.response``, ``category``
 ``"message"``, ``content`` = ``message.model_dump()``, ``metadata.caller`` =
 ``"lead_agent"``).
 """
@@ -32,9 +32,9 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/test-only", tags=["test-only"])
 
-# Mirror runtime/journal.py: human prompts are recorded as ``llm.human.input``
-# and assistant turns as ``llm.ai.response``; both land in ``category="message"``.
-_EVENT_TYPE = {"human": "llm.human.input", "ai": "llm.ai.response"}
+# Mirror runtime/journal.py: raw run-input human messages and assistant turns
+# are both display messages.
+_EVENT_TYPE = {"human": "run.human.input", "ai": "llm.ai.response"}
 
 
 class SeedMessage(BaseModel):

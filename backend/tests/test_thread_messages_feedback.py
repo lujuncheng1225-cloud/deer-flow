@@ -43,7 +43,7 @@ def _ai(run_id: str, seq: int, content: str) -> dict:
 
 
 def _human(run_id: str, seq: int) -> dict:
-    return {"seq": seq, "run_id": run_id, "event_type": "llm.human.input", "category": "message", "content": "hi"}
+    return {"seq": seq, "run_id": run_id, "event_type": "run.human.input", "category": "message", "content": "hi"}
 
 
 def test_feedback_attached_to_last_ai_message_per_run():

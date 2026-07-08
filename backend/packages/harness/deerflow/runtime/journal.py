@@ -197,7 +197,10 @@ class RunJournal(BaseCallbackHandler):
             [len(batch) for batch in messages],
         )
 
-        # Capture the first user message sent to the lead agent in this run.
+        # Fallback only: capture prompt-level human input for diagnostics when
+        # the run input did not already provide a displayable user message.
+        # This is model input after middleware processing, so it must never be
+        # written as a UI message.
         caller = self._identify_caller(tags)
         if caller == "lead_agent" and not self._first_human_msg and messages:
             for batch in reversed(messages):
@@ -206,11 +209,10 @@ class RunJournal(BaseCallbackHandler):
                         self.set_first_human_message(m.text)
                         self._put(
                             event_type="llm.human.input",
-                            category="message",
+                            category="trace",
                             content=m.model_dump(),
                             metadata={"caller": caller},
                         )
-                        self._record_message_summary(m, caller=caller)
                         break
                 if self._first_human_msg:
                     break
@@ -501,6 +503,25 @@ class RunJournal(BaseCallbackHandler):
     def set_first_human_message(self, content: str) -> None:
         """Record the first human message for convenience fields."""
         self._first_human_msg = content[:2000] if content else None
+
+    def record_user_input_message(self, message: HumanMessage) -> None:
+        """Record a raw run-input HumanMessage as the UI-facing user turn.
+
+        ``on_chat_model_start`` observes the post-middleware prompt sent to the
+        model. That prompt can include guardrail wrappers, dynamic context, and
+        other model-only transformations. Display history must instead use the
+        original run input captured before the agent graph starts.
+        """
+        text = self._message_text(message).strip()
+        if text and not self._first_human_msg:
+            self.set_first_human_message(text)
+        self._put(
+            event_type="run.human.input",
+            category="message",
+            content=message.model_dump(),
+            metadata={"caller": "user", "source": "run_input"},
+        )
+        self._record_message_summary(message, caller="user")
 
     def record_middleware(self, tag: str, *, name: str, hook: str, action: str, changes: dict) -> None:
         """Record a middleware state-change event.

@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Literal, cast
 
+from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.base import empty_checkpoint
 
 from deerflow.config.app_config import AppConfig
@@ -118,6 +119,23 @@ def _agent_factory_supports_app_config(agent_factory: Any) -> bool:
         return _compute_agent_factory_supports_app_config(agent_factory)
 
 
+def _iter_visible_input_human_messages(graph_input: Any):
+    """Yield raw run-input HumanMessages that should appear in chat history."""
+    if not isinstance(graph_input, dict):
+        return
+    messages = graph_input.get("messages")
+    if not isinstance(messages, list):
+        return
+    for message in messages:
+        if not isinstance(message, HumanMessage):
+            continue
+        if message.name == "summary":
+            continue
+        if message.additional_kwargs.get("hide_from_ui") is True:
+            continue
+        yield message
+
+
 async def run_agent(
     bridge: StreamBridge,
     run_manager: RunManager,
@@ -175,6 +193,8 @@ async def run_agent(
                 track_token_usage=getattr(run_events_config, "track_token_usage", True),
                 progress_reporter=lambda snapshot: run_manager.update_run_progress(run_id, **snapshot),
             )
+            for message in _iter_visible_input_human_messages(graph_input):
+                journal.record_user_input_message(message)
 
         # 1. Mark running
         await run_manager.set_status(run_id, RunStatus.running)

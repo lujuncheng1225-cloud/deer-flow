@@ -472,9 +472,10 @@ def test_stream_run_completes_and_persists_runtime_state(isolated_app):
         assert messages.status_code == 200, messages.text
         message_events = messages.json()["data"]
         event_types = [row["event_type"] for row in message_events]
-        assert "llm.human.input" in event_types
+        assert event_types[0] == "run.human.input"
         assert "llm.ai.response" in event_types
-        assert any(row["content"]["content"] == "Run lifecycle E2E prompt" for row in message_events if row["event_type"] == "llm.human.input")
+        assert any(row["content"]["content"] == "Run lifecycle E2E prompt" for row in message_events if row["event_type"] == "run.human.input")
+        assert all("--- BEGIN USER INPUT ---" not in row["content"].get("content", "") for row in message_events if isinstance(row.get("content"), dict))
         assert any(row["content"]["content"] == "Lifecycle complete." for row in message_events if row["event_type"] == "llm.ai.response")
 
 
