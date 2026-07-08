@@ -187,6 +187,154 @@ def test_normalize_input_handles_non_human_roles():
     assert result["messages"][2].tool_call_id == "call-1"
 
 
+@pytest.mark.asyncio
+async def test_competitor_price_preflight_injects_commodity_center_context(monkeypatch):
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    import app.gateway.services as services
+
+    calls = []
+
+    class _FakeResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, json):
+            calls.append((url, json))
+            if json["platform"] == "3":
+                return _FakeResponse(
+                    {
+                        "runtime_status": "ready",
+                        "pull_status": "pulled",
+                        "can_enter_evidence": True,
+                        "sample_count": 10,
+                        "sample_statement": "商品中心按 Remini/Google/US 拉取到 10 条价格记录。",
+                        "observed_at": "2026-07-07",
+                        "pulled_fields": {"查询参数": "Remini/Google/US"},
+                        "sample_records": [
+                            {
+                                "primary_evidence_ref": "https://platform-media.meitudata.com/remini.jpg",
+                                "price_summary": "Pro / 1年 / US$74.99",
+                            }
+                        ],
+                        "blockers": [],
+                    }
+                )
+            platform_name = "iOS" if json["platform"] == "2" else "PC-WEB"
+            return _FakeResponse(
+                {
+                    "runtime_status": "ready",
+                    "pull_status": "blocked",
+                    "can_enter_evidence": False,
+                    "sample_count": 0,
+                    "sample_statement": f"商品中心按 Remini/{platform_name}/US 拉取到 0 条价格记录。",
+                    "observed_at": None,
+                    "pulled_fields": {"查询参数": f"Remini/{platform_name}/US"},
+                    "sample_records": [],
+                    "blockers": ["没有拉取到可用商品中心竞品价格记录。"],
+                }
+            )
+
+    monkeypatch.setenv("MEITU_API_INTERNAL_BASE_URL", "http://meitu-api.local")
+    monkeypatch.setattr(services.httpx, "AsyncClient", _FakeAsyncClient)
+
+    result = await services.maybe_inject_commodity_center_price_preflight(
+        {"messages": [HumanMessage(content="查询remini的美国地区定价")]}
+    )
+
+    assert [payload["platform"] for _, payload in calls] == ["2", "3", "4"]
+    assert calls[0][0] == "http://meitu-api.local/external-signals/commodity-center/price-query"
+    assert isinstance(result["messages"][0], SystemMessage)
+    assert result["messages"][0].additional_kwargs["hide_from_ui"] is True
+    assert "meitu-commodity-center-competitor-price-query" in result["messages"][0].content
+    assert "Remini/Google/US" in result["messages"][0].content
+    assert "Pro / 1年 / US$74.99" in result["messages"][0].content
+    assert "primary_evidence_ref: https://platform-media.meitudata.com/remini.jpg" in result["messages"][0].content
+    assert "Do not run public web_search" in result["messages"][0].content
+    assert result["messages"][1].content == "查询remini的美国地区定价"
+
+
+@pytest.mark.asyncio
+async def test_competitor_price_preflight_uses_explicit_ios_platform(monkeypatch):
+    from langchain_core.messages import HumanMessage
+
+    import app.gateway.services as services
+
+    calls = []
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "runtime_status": "ready",
+                "pull_status": "blocked",
+                "can_enter_evidence": False,
+                "sample_count": 0,
+                "pulled_fields": {"查询参数": "Remini/iOS/US"},
+                "sample_records": [],
+                "blockers": ["没有拉取到可用商品中心竞品价格记录。"],
+            }
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, url, json):
+            calls.append(json)
+            return _FakeResponse()
+
+    monkeypatch.setattr(services.httpx, "AsyncClient", _FakeAsyncClient)
+
+    result = await services.maybe_inject_commodity_center_price_preflight(
+        {"messages": [HumanMessage(content="查询 Remini 美国 iOS 订阅价格")]}
+    )
+
+    assert calls == [{"competitionAppCode": "Remini", "platform": "2", "region": "US"}]
+    assert "report the exact Commodity Center app/platform/region coverage gap" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_competitor_price_preflight_skips_non_price_request(monkeypatch):
+    from langchain_core.messages import HumanMessage
+
+    import app.gateway.services as services
+
+    class _FailingAsyncClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("Commodity Center should not be called")
+
+    monkeypatch.setattr(services.httpx, "AsyncClient", _FailingAsyncClient)
+    graph_input = {"messages": [HumanMessage(content="介绍一下 Remini 的核心功能")]}
+
+    result = await services.maybe_inject_commodity_center_price_preflight(graph_input)
+
+    assert result is graph_input
+
+
 def test_build_run_config_basic():
     from app.gateway.services import build_run_config
 

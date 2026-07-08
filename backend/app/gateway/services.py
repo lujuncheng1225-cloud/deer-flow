@@ -10,13 +10,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 from fastapi import HTTPException, Request
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.messages.utils import convert_to_messages
 from langgraph.types import Command
 
@@ -38,6 +40,7 @@ from deerflow.runtime import (
 )
 from deerflow.runtime.runs.naming import resolve_root_run_name
 from deerflow.runtime.user_context import reset_current_user, set_current_user
+from deerflow.utils.messages import message_to_text
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +117,215 @@ def normalize_input(raw_input: dict[str, Any] | None) -> dict[str, Any]:
                 converted.append(msg)
         return {**raw_input, "messages": converted}
     return raw_input
+
+
+_COMPETITOR_PRICE_TERMS = (
+    "价格",
+    "定价",
+    "订阅",
+    "会员",
+    "套餐",
+    "付费",
+    "pricing",
+    "price",
+    "subscription",
+    "membership",
+)
+_COMPETITOR_APP_CODES = {
+    "remini": "Remini",
+    "picsart": "Picsart",
+    "pika": "Pika",
+    "runway": "Runway",
+    "luma": "Luma",
+    "kling": "Kling",
+    "capcut": "CapCut",
+    "canva": "Canva",
+}
+_COMPETITOR_PLATFORM_NAMES = {
+    "2": "iOS",
+    "3": "Google Play",
+    "4": "PC-Web",
+}
+_COMPETITOR_REGION_TERMS = {
+    "us": "US",
+    "usa": "US",
+    "美国": "US",
+    "美区": "US",
+    "tw": "TW",
+    "台湾": "TW",
+    "hk": "HK",
+    "香港": "HK",
+    "jp": "JP",
+    "日本": "JP",
+    "kr": "KR",
+    "韩国": "KR",
+}
+
+
+def _latest_user_message_text(graph_input: Any) -> str | None:
+    if not isinstance(graph_input, dict):
+        return None
+    messages = graph_input.get("messages")
+    if not isinstance(messages, list):
+        return None
+    for message in reversed(messages):
+        if isinstance(message, HumanMessage) and message.additional_kwargs.get("hide_from_ui") is not True:
+            text = message_to_text(message)
+            if text.strip():
+                return text.strip()
+    return None
+
+
+def _competitor_price_request_from_text(text: str) -> dict[str, Any] | None:
+    lowered = text.lower()
+    if not any(term in lowered or term in text for term in _COMPETITOR_PRICE_TERMS):
+        return None
+
+    app_code = next((code for term, code in _COMPETITOR_APP_CODES.items() if term in lowered), None)
+    if not app_code:
+        return None
+
+    region = None
+    for term, code in _COMPETITOR_REGION_TERMS.items():
+        if term in lowered or term in text:
+            region = code
+            break
+    if not region:
+        return None
+
+    platform_terms = {
+        "2": ("ios", "iphone", "app store", "苹果"),
+        "3": ("google", "google play", "android", "安卓", "谷歌"),
+        "4": ("web", "pc", "网页", "官网", "电脑"),
+    }
+    platforms = [code for code, terms in platform_terms.items() if any(term in lowered for term in terms)]
+    if not platforms:
+        platforms = ["2", "3", "4"]
+
+    return {"competitionAppCode": app_code, "region": region, "platforms": platforms}
+
+
+def _compact_commodity_price_result(result: dict[str, Any]) -> dict[str, Any]:
+    first = (result.get("sample_records") or [{}])[0]
+    return {
+        "query": (result.get("pulled_fields") or {}).get("查询参数"),
+        "runtime_status": result.get("runtime_status"),
+        "pull_status": result.get("pull_status"),
+        "can_enter_evidence": result.get("can_enter_evidence"),
+        "sample_count": result.get("sample_count"),
+        "sample_statement": result.get("sample_statement"),
+        "observed_at": result.get("observed_at"),
+        "primary_evidence_ref": first.get("primary_evidence_ref"),
+        "price_summary": first.get("price_summary"),
+        "blockers": result.get("blockers") or [],
+    }
+
+
+def _format_commodity_price_preflight_message(
+    *,
+    app_code: str,
+    region: str,
+    results: list[dict[str, Any]],
+) -> str:
+    successful = [item for item in results if item.get("can_enter_evidence")]
+    lines = [
+        "<meitu-commodity-center-competitor-price-preflight>",
+        "Platform preflight executed before DeerFlow planning for a competitor pricing request.",
+        "Source/tool: meitu-commodity-center-competitor-price-query via Meitu internal API.",
+        f"Requested app/region: {app_code}/{region}.",
+        "Governance: subscription_image_urls or primary_evidence_ref is primary evidence; price_summary/price_items are machine_parsed_candidate only, not platform truth.",
+        "Do not treat tool success, runtime success, or candidate_status as a platform fact.",
+    ]
+    for item in results:
+        lines.append(
+            "- "
+            f"{item.get('query') or 'unknown query'}: "
+            f"runtime_status={item.get('runtime_status')}, "
+            f"pull_status={item.get('pull_status')}, "
+            f"can_enter_evidence={item.get('can_enter_evidence')}, "
+            f"sample_count={item.get('sample_count')}, "
+            f"observed_at={item.get('observed_at') or 'unknown'}."
+        )
+        if item.get("price_summary"):
+            lines.append(f"  candidate_price_summary: {item['price_summary']}")
+        if item.get("primary_evidence_ref"):
+            lines.append(f"  primary_evidence_ref: {item['primary_evidence_ref']}")
+        blockers = item.get("blockers") or []
+        if blockers:
+            lines.append("  blockers: " + "；".join(str(blocker) for blocker in blockers[:3]))
+    if successful:
+        lines.append(
+            "Instruction: answer from the Commodity Center result first. Do not run public web_search, browser fetch, app-store fetch, or deep-research fallback unless the user explicitly asks for public verification."
+        )
+    else:
+        lines.append(
+            "Instruction: report the exact Commodity Center app/platform/region coverage gap. Use public web_search only if the user explicitly requested fallback verification."
+        )
+    lines.append("</meitu-commodity-center-competitor-price-preflight>")
+    return "\n".join(lines)
+
+
+async def maybe_inject_commodity_center_price_preflight(graph_input: Any) -> Any:
+    """Attach deterministic Commodity Center context for native workspace runs.
+
+    This preflight lives at the gateway boundary so native workspace chats do
+    not rely on the model voluntarily selecting the internal pricing tool.
+    It only adds read-only context; it does not write evidence or final truth.
+    """
+    if os.getenv("MEITU_NATIVE_COMPETITOR_PRICE_PREFLIGHT_DISABLED") == "1":
+        return graph_input
+
+    text = _latest_user_message_text(graph_input)
+    if not text:
+        return graph_input
+    request_spec = _competitor_price_request_from_text(text)
+    if not request_spec:
+        return graph_input
+
+    base_url = os.getenv("MEITU_API_INTERNAL_BASE_URL", "http://127.0.0.1:18010").rstrip("/")
+    endpoint = f"{base_url}/external-signals/commodity-center/price-query"
+    queries = [
+        {
+            "competitionAppCode": request_spec["competitionAppCode"],
+            "platform": platform,
+            "region": request_spec["region"],
+        }
+        for platform in request_spec["platforms"]
+    ]
+
+    async def _query(client: httpx.AsyncClient, payload: dict[str, str]) -> dict[str, Any]:
+        try:
+            response = await client.post(endpoint, json=payload)
+            response.raise_for_status()
+            return _compact_commodity_price_result(response.json())
+        except Exception as exc:
+            platform_name = _COMPETITOR_PLATFORM_NAMES.get(payload["platform"], payload["platform"])
+            return {
+                "query": f"{payload['competitionAppCode']}/{platform_name}/{payload['region']}",
+                "runtime_status": "blocked",
+                "pull_status": "blocked",
+                "can_enter_evidence": False,
+                "sample_count": 0,
+                "sample_statement": "Commodity Center preflight failed before evidence admission.",
+                "observed_at": None,
+                "primary_evidence_ref": None,
+                "price_summary": None,
+                "blockers": [f"Commodity Center preflight request failed: {type(exc).__name__}"],
+            }
+
+    async with httpx.AsyncClient(timeout=3.0, follow_redirects=True) as client:
+        results = await asyncio.gather(*(_query(client, payload) for payload in queries))
+
+    system_message = SystemMessage(
+        content=_format_commodity_price_preflight_message(
+            app_code=request_spec["competitionAppCode"],
+            region=request_spec["region"],
+            results=results,
+        ),
+        name="meitu_commodity_center_competitor_price_preflight",
+        additional_kwargs={"hide_from_ui": True, "meitu_preflight": "commodity_center_competitor_price"},
+    )
+    return {**graph_input, "messages": [system_message, *graph_input.get("messages", [])]}
 
 
 _DEFAULT_ASSISTANT_ID = "lead_agent"
@@ -463,6 +675,7 @@ async def start_run(
             graph_input = Command(resume=command["resume"])
         else:
             graph_input = normalize_input(body.input)
+            graph_input = await maybe_inject_commodity_center_price_preflight(graph_input)
         config = build_run_config(thread_id, body.config, body.metadata, assistant_id=body.assistant_id)
         await apply_checkpoint_to_run_config(config, body=body, thread_id=thread_id, request=request)
 
