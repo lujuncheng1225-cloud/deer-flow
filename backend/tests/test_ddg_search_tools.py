@@ -66,6 +66,8 @@ def test_web_search_tool_reads_ddgs_options_from_config() -> None:
             parsed = json.loads(result)
 
     assert parsed["total_results"] == 1
+    assert parsed["provider"] == "ddg"
+    assert parsed["providers_attempted"] == ["ddg:auto"]
     mock_search.assert_called_once_with(
         query="latest news",
         max_results=3,
@@ -73,3 +75,84 @@ def test_web_search_tool_reads_ddgs_options_from_config() -> None:
         safesearch="off",
         backend="auto",
     )
+
+
+def test_web_search_tool_uses_serper_fallback_when_ddg_returns_empty() -> None:
+    with patch("deerflow.community.ddg_search.tools.get_app_config") as mock_config:
+        tool_config = MagicMock()
+        tool_config.model_extra = {"max_results": 3}
+        mock_config.return_value.get_tool_config.return_value = tool_config
+
+        with (
+            patch("deerflow.community.ddg_search.tools._search_text", return_value=[]),
+            patch("deerflow.community.ddg_search.tools._search_serper_fallback") as mock_fallback,
+        ):
+            mock_fallback.return_value = [
+                {
+                    "title": "Manus: Hands On AI",
+                    "href": "https://manus.im/",
+                    "body": "Manus is the action engine that goes beyond answers.",
+                    "provider": "serper_fallback",
+                }
+            ]
+
+            result = tools.web_search_tool.invoke({"query": "manus.im AI", "max_results": 8})
+            parsed = json.loads(result)
+
+    assert parsed["provider"] == "serper_fallback"
+    assert parsed["providers_attempted"] == ["ddg:auto", "serper_fallback"]
+    assert parsed["total_results"] == 1
+    assert parsed["results"][0]["url"] == "https://manus.im/"
+    mock_fallback.assert_called_once_with("manus.im AI", 3)
+
+
+def test_web_search_tool_uses_wikipedia_fallback_without_serper_results() -> None:
+    with patch("deerflow.community.ddg_search.tools.get_app_config") as mock_config:
+        tool_config = MagicMock()
+        tool_config.model_extra = {"max_results": 3}
+        mock_config.return_value.get_tool_config.return_value = tool_config
+
+        with (
+            patch("deerflow.community.ddg_search.tools._search_text") as mock_search,
+            patch("deerflow.community.ddg_search.tools._search_serper_fallback", return_value=[]),
+        ):
+            mock_search.side_effect = [
+                [],
+                [
+                    {
+                        "title": "Manus (AI agent)",
+                        "href": "https://en.wikipedia.org/wiki/Manus_(AI_agent)",
+                        "body": "Manus is a general AI agent platform.",
+                    }
+                ],
+            ]
+
+            result = tools.web_search_tool.invoke({"query": "Manus AI agent", "max_results": 8})
+            parsed = json.loads(result)
+
+    assert parsed["provider"] == "wikipedia_fallback"
+    assert parsed["providers_attempted"] == ["ddg:auto", "serper_fallback", "ddg:wikipedia"]
+    assert parsed["total_results"] == 1
+    assert parsed["results"][0]["url"] == "https://en.wikipedia.org/wiki/Manus_(AI_agent)"
+    assert mock_search.call_count == 2
+
+
+def test_web_search_tool_keeps_no_results_when_fallback_is_empty() -> None:
+    with patch("deerflow.community.ddg_search.tools.get_app_config") as mock_config:
+        tool_config = MagicMock()
+        tool_config.model_extra = {}
+        mock_config.return_value.get_tool_config.return_value = tool_config
+
+        with (
+            patch("deerflow.community.ddg_search.tools._search_text", return_value=[]),
+            patch("deerflow.community.ddg_search.tools._search_serper_fallback", return_value=[]),
+            patch("deerflow.community.ddg_search.tools._search_wikipedia_fallback", return_value=[]),
+        ):
+            result = tools.web_search_tool.invoke({"query": "missing thing", "max_results": 5})
+            parsed = json.loads(result)
+
+    assert parsed == {
+        "error": "No results found",
+        "query": "missing thing",
+        "providers_attempted": ["ddg:auto", "serper_fallback", "ddg:wikipedia"],
+    }

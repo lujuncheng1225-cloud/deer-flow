@@ -15,6 +15,7 @@ DEFAULT_BACKEND = "auto"
 DEFAULT_REGION = "wt-wt"
 DEFAULT_SAFESEARCH = "moderate"
 DEFAULT_WIKIPEDIA_REGION = "us-en"
+WIKIPEDIA_FALLBACK_BACKEND = "wikipedia"
 
 WIKIPEDIA_BACKENDS = {"auto", "all", "wikipedia"}
 WIKIPEDIA_LANGUAGE_ALIASES = {
@@ -130,6 +131,79 @@ def _search_text(
         return []
 
 
+def _search_serper_fallback(query: str, max_results: int) -> list[dict]:
+    try:
+        from deerflow.community.serper.tools import (
+            _SERPER_SEARCH_ENDPOINT,
+            _clean_query,
+            _coerce_max_results,
+            _get_api_key,
+            _response_items,
+            _serper_post,
+        )
+    except Exception as e:  # pragma: no cover - defensive optional provider import
+        logger.warning("Serper fallback unavailable: %s", e)
+        return []
+
+    api_key = _get_api_key("web_search")
+    if not api_key:
+        return []
+
+    cleaned_query = _clean_query(query)
+    bounded_max_results = _coerce_max_results(max_results)
+    data, error_json = _serper_post(
+        _SERPER_SEARCH_ENDPOINT,
+        api_key,
+        cleaned_query,
+        bounded_max_results,
+    )
+    if error_json is not None or data is None:
+        return []
+
+    organic, error_json = _response_items(data, "organic", cleaned_query)
+    if error_json is not None or not organic:
+        return []
+
+    return [
+        {
+            "title": item.get("title", ""),
+            "href": item.get("link", ""),
+            "body": item.get("snippet", ""),
+            "provider": "serper_fallback",
+        }
+        for item in organic[:bounded_max_results]
+    ]
+
+
+def _search_wikipedia_fallback(
+    query: str,
+    max_results: int,
+    region: str | None,
+    safesearch: str | None,
+    backend: str | list[str] | tuple[str, ...] | None,
+) -> list[dict]:
+    backend_parts = {part.strip().lower() for part in _normalize_backend(backend).split(",")}
+    if WIKIPEDIA_FALLBACK_BACKEND in backend_parts or "all" in backend_parts:
+        return []
+
+    results = _search_text(
+        query=query,
+        max_results=max_results,
+        region=region,
+        safesearch=safesearch,
+        backend=WIKIPEDIA_FALLBACK_BACKEND,
+    )
+    return [
+        {
+            "title": item.get("title", ""),
+            "href": item.get("href", item.get("link", "")),
+            "body": item.get("body", item.get("snippet", "")),
+            "provider": "wikipedia_fallback",
+        }
+        for item in results
+    ]
+
+
 @tool("web_search", parse_docstring=True)
 def web_search_tool(
     query: str,
@@ -153,6 +227,7 @@ def web_search_tool(
         safesearch = config.model_extra.get("safesearch", safesearch)
         backend = config.model_extra.get("backend", backend)
 
+    providers_attempted = [f"ddg:{_normalize_backend(backend)}"]
     results = _search_text(
         query=query,
         max_results=max_results,
@@ -160,9 +235,33 @@ def web_search_tool(
         safesearch=safesearch,
         backend=backend,
     )
+    provider = "ddg"
+    if not results:
+        providers_attempted.append("serper_fallback")
+        results = _search_serper_fallback(query, max_results)
+        if results:
+            provider = "serper_fallback"
+    if not results:
+        providers_attempted.append("ddg:wikipedia")
+        results = _search_wikipedia_fallback(
+            query=query,
+            max_results=max_results,
+            region=region,
+            safesearch=safesearch,
+            backend=backend,
+        )
+        if results:
+            provider = "wikipedia_fallback"
 
     if not results:
-        return json.dumps({"error": "No results found", "query": query}, ensure_ascii=False)
+        return json.dumps(
+            {
+                "error": "No results found",
+                "query": query,
+                "providers_attempted": providers_attempted,
+            },
+            ensure_ascii=False,
+        )
 
     normalized_results = [
         {
@@ -175,6 +274,8 @@ def web_search_tool(
 
     output = {
         "query": query,
+        "provider": provider,
+        "providers_attempted": providers_attempted,
         "total_results": len(normalized_results),
         "results": normalized_results,
     }
