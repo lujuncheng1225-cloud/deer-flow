@@ -232,13 +232,37 @@ async def test_web_fetch_tool_returns_error_on_crawl_failure(monkeypatch):
     async def mock_crawl(self, url, **kwargs):
         return "Error: Jina API returned status 429: Rate limited"
 
+    async def mock_direct_fetch(url, **kwargs):
+        return None
+
     mock_config = MagicMock()
     mock_config.get_tool_config.return_value = None
     monkeypatch.setattr("deerflow.community.jina_ai.tools.get_app_config", lambda: mock_config)
     monkeypatch.setattr(JinaClient, "crawl", mock_crawl)
+    monkeypatch.setattr("deerflow.community.jina_ai.tools._direct_fetch_html", mock_direct_fetch)
     result = await web_fetch_tool.ainvoke("https://example.com")
     assert result.startswith("Error:")
     assert "429" in result
+
+
+@pytest.mark.anyio
+async def test_web_fetch_tool_uses_direct_fetch_fallback_on_crawl_failure(monkeypatch):
+    async def mock_crawl(self, url, **kwargs):
+        return "Error: Request to Jina API failed: Network is unreachable"
+
+    async def mock_direct_fetch(url, **kwargs):
+        return "<html><head><title>Manus</title></head><body><main><p>Hands On AI</p></main></body></html>"
+
+    mock_config = MagicMock()
+    mock_config.get_tool_config.return_value = None
+    monkeypatch.setattr("deerflow.community.jina_ai.tools.get_app_config", lambda: mock_config)
+    monkeypatch.setattr(JinaClient, "crawl", mock_crawl)
+    monkeypatch.setattr("deerflow.community.jina_ai.tools._direct_fetch_html", mock_direct_fetch)
+
+    result = await web_fetch_tool.ainvoke("https://manus.im/")
+
+    assert "Hands On AI" in result
+    assert not result.startswith("Error:")
 
 
 @pytest.mark.anyio

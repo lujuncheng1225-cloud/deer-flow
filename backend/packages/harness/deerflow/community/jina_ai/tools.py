@@ -1,5 +1,8 @@
 import asyncio
+from ipaddress import ip_address
+from urllib.parse import urlparse
 
+import httpx
 from langchain.tools import tool
 
 from deerflow.community.jina_ai.jina_client import JinaClient
@@ -41,6 +44,39 @@ def _coerce_proxy(value: object) -> str | None:
     return proxy or None
 
 
+def _direct_fetch_url_allowed(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    host = parsed.hostname.lower().rstrip(".")
+    if host == "localhost" or host.endswith(".localhost"):
+        return False
+    try:
+        return ip_address(host).is_global
+    except ValueError:
+        return True
+
+
+async def _direct_fetch_html(url: str, timeout: int, proxy: str | None, trust_env: bool) -> str | None:
+    if not _direct_fetch_url_allowed(url):
+        return None
+    client_kwargs: dict[str, object] = {
+        "follow_redirects": True,
+        "headers": {"User-Agent": "DeerFlow web_fetch direct fallback"},
+        "timeout": timeout,
+        "trust_env": trust_env,
+    }
+    if proxy:
+        client_kwargs["proxy"] = proxy
+    try:
+        async with httpx.AsyncClient(**client_kwargs) as client:
+            response = await client.get(url)
+        response.raise_for_status()
+        return response.text if response.text.strip() else None
+    except Exception:
+        return None
+
+
 @tool("web_fetch", parse_docstring=True)
 async def web_fetch_tool(url: str) -> str:
     """Fetch the contents of a web page at a given URL.
@@ -63,6 +99,9 @@ async def web_fetch_tool(url: str) -> str:
         trust_env = _coerce_bool(config.model_extra.get("trust_env"), trust_env)
     html_content = await jina_client.crawl(url, return_format="html", timeout=timeout, proxy=proxy, trust_env=trust_env)
     if isinstance(html_content, str) and html_content.startswith("Error:"):
-        return html_content
+        direct_html = await _direct_fetch_html(url, timeout=timeout, proxy=proxy, trust_env=trust_env)
+        if direct_html is None:
+            return html_content
+        html_content = direct_html
     article = await asyncio.to_thread(readability_extractor.extract_article, html_content)
     return article.to_markdown()[:4096]

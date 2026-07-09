@@ -115,6 +115,7 @@ def test_web_search_tool_uses_wikipedia_fallback_without_serper_results() -> Non
         with (
             patch("deerflow.community.ddg_search.tools._search_text") as mock_search,
             patch("deerflow.community.ddg_search.tools._search_serper_fallback", return_value=[]),
+            patch("deerflow.community.ddg_search.tools._search_direct_site_fallback", return_value=[]),
         ):
             mock_search.side_effect = [
                 [],
@@ -131,10 +132,49 @@ def test_web_search_tool_uses_wikipedia_fallback_without_serper_results() -> Non
             parsed = json.loads(result)
 
     assert parsed["provider"] == "wikipedia_fallback"
-    assert parsed["providers_attempted"] == ["ddg:auto", "serper_fallback", "ddg:wikipedia"]
+    assert parsed["providers_attempted"] == ["ddg:auto", "serper_fallback", "direct_site_fallback", "ddg:wikipedia"]
     assert parsed["total_results"] == 1
     assert parsed["results"][0]["url"] == "https://en.wikipedia.org/wiki/Manus_(AI_agent)"
     assert mock_search.call_count == 2
+
+
+def test_web_search_tool_uses_direct_site_fallback_before_wikipedia() -> None:
+    with patch("deerflow.community.ddg_search.tools.get_app_config") as mock_config:
+        tool_config = MagicMock()
+        tool_config.model_extra = {"max_results": 3}
+        mock_config.return_value.get_tool_config.return_value = tool_config
+
+        with (
+            patch("deerflow.community.ddg_search.tools._search_text", return_value=[]),
+            patch("deerflow.community.ddg_search.tools._search_serper_fallback", return_value=[]),
+            patch("deerflow.community.ddg_search.tools._search_direct_site_fallback") as mock_direct,
+            patch("deerflow.community.ddg_search.tools._search_wikipedia_fallback") as mock_wikipedia,
+        ):
+            mock_direct.return_value = [
+                {
+                    "title": "Manus: Hands On AI",
+                    "href": "https://manus.im/",
+                    "body": "Official site candidate for manus.im",
+                    "provider": "direct_site_fallback",
+                }
+            ]
+
+            result = tools.web_search_tool.invoke({"query": "Manus AI agent", "max_results": 8})
+            parsed = json.loads(result)
+
+    assert parsed["provider"] == "direct_site_fallback"
+    assert parsed["providers_attempted"] == ["ddg:auto", "serper_fallback", "direct_site_fallback"]
+    assert parsed["results"][0]["url"] == "https://manus.im/"
+    mock_direct.assert_called_once_with("Manus AI agent", 3)
+    mock_wikipedia.assert_not_called()
+
+
+def test_candidate_direct_site_urls_builds_brand_domain_candidates() -> None:
+    assert tools._candidate_direct_site_urls("Manus AI agent")[:3] == [
+        "https://manus.im/",
+        "https://manus.ai/",
+        "https://manus.com/",
+    ]
 
 
 def test_web_search_tool_keeps_no_results_when_fallback_is_empty() -> None:
@@ -146,6 +186,7 @@ def test_web_search_tool_keeps_no_results_when_fallback_is_empty() -> None:
         with (
             patch("deerflow.community.ddg_search.tools._search_text", return_value=[]),
             patch("deerflow.community.ddg_search.tools._search_serper_fallback", return_value=[]),
+            patch("deerflow.community.ddg_search.tools._search_direct_site_fallback", return_value=[]),
             patch("deerflow.community.ddg_search.tools._search_wikipedia_fallback", return_value=[]),
         ):
             result = tools.web_search_tool.invoke({"query": "missing thing", "max_results": 5})
@@ -154,5 +195,5 @@ def test_web_search_tool_keeps_no_results_when_fallback_is_empty() -> None:
     assert parsed == {
         "error": "No results found",
         "query": "missing thing",
-        "providers_attempted": ["ddg:auto", "serper_fallback", "ddg:wikipedia"],
+        "providers_attempted": ["ddg:auto", "serper_fallback", "direct_site_fallback", "ddg:wikipedia"],
     }

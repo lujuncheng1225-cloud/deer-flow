@@ -4,7 +4,11 @@ Web Search Tool - Search the web using DuckDuckGo (no API key required).
 
 import json
 import logging
+import re
+from html.parser import HTMLParser
+from urllib.parse import urlparse
 
+import httpx
 from langchain.tools import tool
 
 from deerflow.config import get_app_config
@@ -16,6 +20,26 @@ DEFAULT_REGION = "wt-wt"
 DEFAULT_SAFESEARCH = "moderate"
 DEFAULT_WIKIPEDIA_REGION = "us-en"
 WIKIPEDIA_FALLBACK_BACKEND = "wikipedia"
+DIRECT_SITE_TLDS = ("im", "ai", "com", "io", "app")
+DIRECT_SITE_STOPWORDS = {
+    "agent",
+    "analysis",
+    "api",
+    "app",
+    "apps",
+    "company",
+    "docs",
+    "feature",
+    "features",
+    "official",
+    "plan",
+    "plans",
+    "price",
+    "pricing",
+    "subscription",
+    "tool",
+    "website",
+}
 
 WIKIPEDIA_BACKENDS = {"auto", "all", "wikipedia"}
 WIKIPEDIA_LANGUAGE_ALIASES = {
@@ -24,6 +48,25 @@ WIKIPEDIA_LANGUAGE_ALIASES = {
     "tzh": "zh",
     "wt": "en",
 }
+
+
+class _TitleParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self._in_title = False
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "title":
+            self._in_title = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "title":
+            self._in_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self._in_title:
+            self.parts.append(data)
 
 
 def _normalize_backend(backend: str | list[str] | tuple[str, ...] | None) -> str:
@@ -128,7 +171,96 @@ def _search_text(
 
     except Exception as e:
         logger.error(f"Failed to search web: {e}")
-        return []
+    return []
+
+
+def _extract_title(html: str) -> str:
+    parser = _TitleParser()
+    parser.feed(html[:20000])
+    return " ".join(" ".join(parser.parts).split())
+
+
+def _extract_meta_description(html: str) -> str:
+    match = re.search(
+        r'<meta\s+[^>]*(?:name|property)=["\'](?:description|og:description)["\'][^>]*content=["\']([^"\']+)["\']',
+        html[:50000],
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        match = re.search(
+            r'<meta\s+[^>]*content=["\']([^"\']+)["\'][^>]*(?:name|property)=["\'](?:description|og:description)["\']',
+            html[:50000],
+            flags=re.IGNORECASE,
+        )
+    return " ".join(match.group(1).split()) if match else ""
+
+
+def _candidate_direct_site_urls(query: str) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add_host(host: str) -> None:
+        host = host.lower().strip(".")
+        if host in seen:
+            return
+        seen.add(host)
+        candidates.append(f"https://{host}/")
+
+    for match in re.finditer(r"\b([a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+)\b", query):
+        host = match.group(1).lower()
+        if "." in host and not host.startswith("-") and not host.endswith("-"):
+            add_host(host)
+
+    brand_tokens = []
+    for match in re.finditer(r"\b[a-zA-Z][a-zA-Z0-9-]{2,31}\b", query):
+        token = match.group(0).lower().strip("-")
+        if token and token not in DIRECT_SITE_STOPWORDS and token not in brand_tokens:
+            brand_tokens.append(token)
+        if len(brand_tokens) >= 2:
+            break
+
+    for token in brand_tokens:
+        for tld in DIRECT_SITE_TLDS:
+            add_host(f"{token}.{tld}")
+
+    return candidates[:10]
+
+
+def _fetch_direct_site_result(url: str) -> dict | None:
+    try:
+        response = httpx.get(
+            url,
+            follow_redirects=True,
+            timeout=8,
+            headers={"User-Agent": "DeerFlow web_search direct-site fallback"},
+        )
+        response.raise_for_status()
+    except Exception as e:
+        logger.debug("Direct site fallback failed for %s: %s", url, e)
+        return None
+
+    final_url = str(response.url)
+    parsed = urlparse(final_url)
+    title = _extract_title(response.text) or parsed.netloc
+    snippet = _extract_meta_description(response.text)
+    return {
+        "title": title,
+        "href": final_url,
+        "body": snippet or f"Official site candidate for {parsed.netloc}",
+        "provider": "direct_site_fallback",
+    }
+
+
+def _search_direct_site_fallback(query: str, max_results: int) -> list[dict]:
+    results: list[dict] = []
+    for url in _candidate_direct_site_urls(query):
+        result = _fetch_direct_site_result(url)
+        if result is None:
+            continue
+        results.append(result)
+        if len(results) >= max_results:
+            break
+    return results
 
 
 def _search_serper_fallback(query: str, max_results: int) -> list[dict]:
@@ -241,6 +373,11 @@ def web_search_tool(
         results = _search_serper_fallback(query, max_results)
         if results:
             provider = "serper_fallback"
+    if not results:
+        providers_attempted.append("direct_site_fallback")
+        results = _search_direct_site_fallback(query, max_results)
+        if results:
+            provider = "direct_site_fallback"
     if not results:
         providers_attempted.append("ddg:wikipedia")
         results = _search_wikipedia_fallback(
