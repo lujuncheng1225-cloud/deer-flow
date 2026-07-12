@@ -32,6 +32,24 @@ def generate_csrf_token() -> str:
     return secrets.token_urlsafe(CSRF_TOKEN_LENGTH)
 
 
+def _set_csrf_cookie(response: Response, request: Request) -> None:
+    """Set a browser-readable CSRF cookie paired with the auth session."""
+    is_https = is_secure_request(request)
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=generate_csrf_token(),
+        httponly=False,  # Must be JS-readable for Double Submit Cookie pattern
+        secure=is_https,
+        samesite="strict",
+        # Match the access_token cookie's lifetime (auth.py::_set_session_cookie)
+        # so the double-submit pair never diverges. A session-only csrf_token is
+        # evicted when iOS Safari terminates a home-screen PWA while the persistent
+        # access_token survives — leaving the user "logged in" but unable to make
+        # any state-changing request (403 "CSRF token missing").
+        max_age=get_auth_config().token_expiry_days * 24 * 3600 if is_https else None,
+    )
+
+
 def should_check_csrf(request: Request) -> bool:
     """Determine if a request needs CSRF validation.
 
@@ -214,24 +232,15 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
 
-        # For auth endpoints that set up session, also set CSRF cookie
-        if _is_auth and request.method == "POST":
-            # Generate a new CSRF token for the session
-            csrf_token = generate_csrf_token()
-            is_https = is_secure_request(request)
-            response.set_cookie(
-                key=CSRF_COOKIE_NAME,
-                value=csrf_token,
-                httponly=False,  # Must be JS-readable for Double Submit Cookie pattern
-                secure=is_https,
-                samesite="strict",
-                # Match the access_token cookie's lifetime (auth.py::_set_session_cookie)
-                # so the double-submit pair never diverges. A session-only csrf_token is
-                # evicted when iOS Safari terminates a home-screen PWA while the persistent
-                # access_token survives — leaving the user "logged in" but unable to make
-                # any state-changing request (403 "CSRF token missing").
-                max_age=get_auth_config().token_expiry_days * 24 * 3600 if is_https else None,
-            )
+        # Restore the double-submit pair for sessions created before the CSRF
+        # cookie became persistent. A successful /me response proves the
+        # session was accepted (or auth is disabled); failed probes never mint
+        # a CSRF token.
+        restore_missing_cookie = request.method == "GET" and request.url.path.rstrip("/") == "/api/v1/auth/me" and response.status_code == 200 and not request.cookies.get(CSRF_COOKIE_NAME)
+
+        # Auth endpoints that set up a session also establish a fresh pair.
+        if (_is_auth and request.method == "POST") or restore_missing_cookie:
+            _set_csrf_cookie(response, request)
 
         return response
 

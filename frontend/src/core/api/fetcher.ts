@@ -36,6 +36,27 @@ export function readCsrfCookie(): string | null {
   return null;
 }
 
+let csrfRecoveryPromise: Promise<string | null> | null = null;
+
+/** Restore the CSRF cookie for an authenticated session that predates it. */
+export async function ensureCsrfToken(): Promise<string | null> {
+  const currentToken = readCsrfCookie();
+  if (currentToken || typeof document === "undefined") return currentToken;
+
+  csrfRecoveryPromise ??= globalThis
+    .fetch("/api/v1/auth/me", {
+      credentials: "include",
+      cache: "no-store",
+    })
+    .then((response) => (response.ok ? readCsrfCookie() : null))
+    .catch(() => null)
+    .finally(() => {
+      csrfRecoveryPromise = null;
+    });
+
+  return csrfRecoveryPromise;
+}
+
 /**
  * Fetch with credentials and automatic CSRF protection.
  *
@@ -63,7 +84,7 @@ export async function fetch(
   // it to mirror the gateway's ``should_check_csrf`` logic exactly.
   let headers = init?.headers;
   if (isStateChangingMethod(init?.method ?? "GET")) {
-    const token = readCsrfCookie();
+    const token = await ensureCsrfToken();
     if (token) {
       // Fresh Headers instance so we don't mutate caller-supplied objects.
       const merged = new Headers(headers);

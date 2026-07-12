@@ -1,8 +1,10 @@
 """Tests for CSRF middleware."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from starlette.testclient import TestClient
 
+from app.gateway.auth_disabled import is_auth_disabled
 from app.gateway.csrf_middleware import CSRFMiddleware
 
 
@@ -17,6 +19,12 @@ def _make_app() -> FastAPI:
     @app.post("/api/v1/auth/register")
     async def register():
         return {"ok": True}
+
+    @app.get("/api/v1/auth/me")
+    async def current_user(request: Request):
+        if not request.cookies.get("access_token") and not is_auth_disabled():
+            return JSONResponse(status_code=401, content={"detail": "not authenticated"})
+        return {"id": "user-1"}
 
     @app.post("/api/threads/abc/runs/stream")
     async def protected_mutation():
@@ -187,6 +195,42 @@ def test_auth_post_without_origin_still_allows_non_browser_clients():
     client = TestClient(_make_app(), base_url="https://deerflow.example")
 
     response = client.post("/api/v1/auth/login/local")
+
+    assert response.status_code == 200
+    assert response.cookies.get("csrf_token")
+
+
+def test_authenticated_me_restores_missing_csrf_cookie():
+    client = TestClient(_make_app(), base_url="https://deerflow.example")
+    client.cookies.set("access_token", "existing-session")
+
+    response = client.get("/api/v1/auth/me")
+
+    assert response.status_code == 200
+    csrf_token = response.cookies.get("csrf_token")
+    assert csrf_token
+
+    mutation = client.post(
+        "/api/threads/abc/runs/stream",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+    assert mutation.status_code == 200
+
+
+def test_unauthenticated_me_does_not_mint_csrf_cookie():
+    client = TestClient(_make_app(), base_url="https://deerflow.example")
+
+    response = client.get("/api/v1/auth/me")
+
+    assert response.status_code == 401
+    assert response.cookies.get("csrf_token") is None
+
+
+def test_auth_disabled_me_establishes_csrf_cookie(monkeypatch):
+    monkeypatch.setenv("DEER_FLOW_AUTH_DISABLED", "1")
+    client = TestClient(_make_app(), base_url="http://localhost:2026")
+
+    response = client.get("/api/v1/auth/me")
 
     assert response.status_code == 200
     assert response.cookies.get("csrf_token")
