@@ -751,6 +751,7 @@ tools:
     timeout: 10
     direct_first: true           # Try a normal HTTP fetch before waiting for Jina.
     direct_min_characters: 160   # Fall back to Jina when direct extraction is too short.
+    use_readability_js: false    # Avoid runtime npm installation in the PRE container.
     # Optional proxy for restricted networks / Docker / WSL.
     # Use host.docker.internal instead of 127.0.0.1 when the proxy runs on the host.
     # proxy: $HTTPS_PROXY

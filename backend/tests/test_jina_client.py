@@ -268,6 +268,7 @@ async def test_web_fetch_tool_uses_direct_fetch_fallback_on_crawl_failure(monkey
 @pytest.mark.anyio
 async def test_web_fetch_tool_uses_direct_fetch_before_jina_when_configured(monkeypatch):
     crawl_calls = 0
+    extraction_modes: list[bool] = []
 
     async def mock_crawl(self, url, **kwargs):
         nonlocal crawl_calls
@@ -277,21 +278,28 @@ async def test_web_fetch_tool_uses_direct_fetch_before_jina_when_configured(monk
     async def mock_direct_fetch(url, **kwargs):
         return "<html><body><main><p>" + ("Official Manus pricing details. " * 20) + "</p></main></body></html>"
 
+    async def mock_extract(html, *, use_readability_js=True):
+        extraction_modes.append(use_readability_js)
+        return "Official Manus pricing details. " * 20
+
     mock_config = MagicMock()
     mock_tool_config = MagicMock()
     mock_tool_config.model_extra = {
         "direct_first": True,
         "direct_min_characters": 100,
+        "use_readability_js": False,
     }
     mock_config.get_tool_config.return_value = mock_tool_config
     monkeypatch.setattr("deerflow.community.jina_ai.tools.get_app_config", lambda: mock_config)
     monkeypatch.setattr(JinaClient, "crawl", mock_crawl)
     monkeypatch.setattr("deerflow.community.jina_ai.tools._direct_fetch_html", mock_direct_fetch)
+    monkeypatch.setattr("deerflow.community.jina_ai.tools._extract_markdown", mock_extract)
 
     result = await web_fetch_tool.ainvoke("https://manus.im/pricing")
 
     assert "Official Manus pricing details" in result
     assert crawl_calls == 0
+    assert extraction_modes == [False]
 
 
 @pytest.mark.anyio

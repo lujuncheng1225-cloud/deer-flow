@@ -77,8 +77,9 @@ async def _direct_fetch_html(url: str, timeout: int, proxy: str | None, trust_en
         return None
 
 
-async def _extract_markdown(html_content: str) -> str:
-    article = await asyncio.to_thread(readability_extractor.extract_article, html_content)
+async def _extract_markdown(html_content: str, *, use_readability_js: bool = True) -> str:
+    extractor = readability_extractor if use_readability_js else ReadabilityExtractor(use_readability_js=False)
+    article = await asyncio.to_thread(extractor.extract_article, html_content)
     return article.to_markdown()[:4096]
 
 
@@ -99,6 +100,7 @@ async def web_fetch_tool(url: str) -> str:
     trust_env = True
     direct_first = False
     direct_min_characters = 200
+    use_readability_js = True
     config = get_app_config().get_tool_config("web_fetch")
     if config is not None:
         timeout = _coerce_timeout(config.model_extra.get("timeout"), timeout)
@@ -106,6 +108,7 @@ async def web_fetch_tool(url: str) -> str:
         trust_env = _coerce_bool(config.model_extra.get("trust_env"), trust_env)
         direct_first = _coerce_bool(config.model_extra.get("direct_first"), direct_first)
         direct_min_characters = _coerce_timeout(config.model_extra.get("direct_min_characters"), direct_min_characters)
+        use_readability_js = _coerce_bool(config.model_extra.get("use_readability_js"), use_readability_js)
 
     direct_html = None
     direct_markdown = None
@@ -113,7 +116,7 @@ async def web_fetch_tool(url: str) -> str:
         direct_html = await _direct_fetch_html(url, timeout=timeout, proxy=proxy, trust_env=trust_env)
         if direct_html is not None:
             try:
-                direct_markdown = await _extract_markdown(direct_html)
+                direct_markdown = await _extract_markdown(direct_html, use_readability_js=use_readability_js)
             except Exception:
                 direct_markdown = None
             if direct_markdown is not None and len(direct_markdown.strip()) >= max(0, direct_min_characters):
@@ -125,5 +128,5 @@ async def web_fetch_tool(url: str) -> str:
             direct_html = await _direct_fetch_html(url, timeout=timeout, proxy=proxy, trust_env=trust_env)
         if direct_html is None:
             return html_content
-        return direct_markdown if direct_markdown is not None else await _extract_markdown(direct_html)
-    return await _extract_markdown(html_content)
+        return direct_markdown if direct_markdown is not None else await _extract_markdown(direct_html, use_readability_js=use_readability_js)
+    return await _extract_markdown(html_content, use_readability_js=use_readability_js)

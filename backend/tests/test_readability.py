@@ -7,6 +7,25 @@ import pytest
 from deerflow.utils.readability import ReadabilityExtractor
 
 
+def test_extract_article_can_skip_readability_js(monkeypatch):
+    calls: list[bool] = []
+
+    def _fake_simple_json_from_html_string(html: str, use_readability: bool = False):
+        calls.append(use_readability)
+        return {"title": "Python Title", "content": "<p>Python Content</p>"}
+
+    monkeypatch.setattr(
+        "deerflow.utils.readability.simple_json_from_html_string",
+        _fake_simple_json_from_html_string,
+    )
+
+    article = ReadabilityExtractor(use_readability_js=False).extract_article("<html><body>test</body></html>")
+
+    assert calls == [False]
+    assert article.title == "Python Title"
+    assert article.html_content == "<p>Python Content</p>"
+
+
 def test_extract_article_falls_back_when_readability_js_fails(monkeypatch):
     """When Node-based readability fails, extraction should fall back to Python mode."""
 

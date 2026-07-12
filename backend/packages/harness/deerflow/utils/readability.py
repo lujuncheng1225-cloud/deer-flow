@@ -56,21 +56,27 @@ class Article:
 
 
 class ReadabilityExtractor:
+    def __init__(self, *, use_readability_js: bool = True) -> None:
+        self._use_readability_js = use_readability_js
+
     def extract_article(self, html: str) -> Article:
-        try:
-            article = simple_json_from_html_string(html, use_readability=True)
-        except (subprocess.CalledProcessError, FileNotFoundError) as exc:
-            stderr = getattr(exc, "stderr", None)
-            if isinstance(stderr, bytes):
-                stderr = stderr.decode(errors="replace")
-            stderr_info = f"; stderr={stderr.strip()}" if isinstance(stderr, str) and stderr.strip() else ""
-            logger.warning(
-                "Readability.js extraction failed with %s%s; falling back to pure-Python extraction",
-                type(exc).__name__,
-                stderr_info,
-                exc_info=True,
-            )
+        if not self._use_readability_js:
             article = simple_json_from_html_string(html, use_readability=False)
+        else:
+            try:
+                article = simple_json_from_html_string(html, use_readability=True)
+            except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+                stderr = getattr(exc, "stderr", None)
+                if isinstance(stderr, bytes):
+                    stderr = stderr.decode(errors="replace")
+                stderr_info = f"; stderr={stderr.strip()}" if isinstance(stderr, str) and stderr.strip() else ""
+                logger.warning(
+                    "Readability.js extraction failed with %s%s; falling back to pure-Python extraction",
+                    type(exc).__name__,
+                    stderr_info,
+                    exc_info=True,
+                )
+                article = simple_json_from_html_string(html, use_readability=False)
 
         html_content = article.get("content")
         if not html_content or not str(html_content).strip():

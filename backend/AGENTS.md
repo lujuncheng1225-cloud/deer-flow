@@ -406,7 +406,7 @@ Scheduled-task runtime note:
 
 **Community tools** (`packages/harness/deerflow/community/`): optional integrations, each in its own subpackage and wired through `config.yaml`. Documented examples:
 - `tavily/` - Web search (5 results default) and web fetch (4KB limit)
-- `jina_ai/` - Web fetch via Jina reader API with readability extraction; optional `direct_first` performs a bounded normal HTTP fetch before Jina and falls back when extracted content is too short
+- `jina_ai/` - Web fetch via Jina reader API with readability extraction; optional `direct_first` performs a bounded normal HTTP fetch before Jina and falls back when extracted content is too short, while `use_readability_js: false` selects the pure-Python extractor for containers that must not install Node dependencies at runtime
 - `ddg_search/` - DDGS web search; optional per-engine `timeout` plus a bounded `direct_site_first` path keeps commercial brand lookups from waiting on every `auto` backend while generic queries retain normal DDGS-first behavior
 - `firecrawl/` - Web scraping via Firecrawl API
 - `image_search/` - Image search via DuckDuckGo
