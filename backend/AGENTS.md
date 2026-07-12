@@ -16,6 +16,7 @@ DeerFlow is a LangGraph-based AI super agent system with a full-stack architectu
 - `make dev`, Docker dev, and production all run the agent runtime in Gateway via `RunManager` + `run_agent()` + `StreamBridge` (`packages/harness/deerflow/runtime/`). Nginx exposes that runtime at `/api/langgraph/*` and rewrites it to Gateway's native `/api/*` routers.
 - Scheduled-task executions must reuse that same Gateway run lifecycle. The scheduler may decide *when* work runs, but it must dispatch through the existing run path rather than introducing a parallel execution stack.
 - Interactive clarification is risk-aware. The lead prompt should continue low-risk research through an obvious typo when one interpretation is strongly supported, state the assumption, answer from available public evidence even when a secondary/internal source is missing, and reserve `ask_clarification` for missing required inputs, unresolved entity ambiguity, or consequential actions. Keep this behavior covered in `tests/test_lead_agent_prompt.py`.
+- The workspace Markdown link renderer may promote image links to inline evidence previews only for explicitly trusted hosts. Commodity Center previews are currently restricted to HTTPS URLs on `platform-media.meitudata.com`; keep untrusted image-looking links as ordinary links and cover the boundary in `frontend/tests/unit/components/workspace/messages/markdown-link.test.ts`.
 
 **Project Structure**:
 ```

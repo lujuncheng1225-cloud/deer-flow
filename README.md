@@ -265,6 +265,8 @@ The unified nginx endpoint is same-origin by default and does not emit browser C
 
 Interactive research uses risk-aware clarification: an obvious typo or awkward phrase does not interrupt a low-risk lookup when one entity or intent is a strong match. The lead agent states its assumption and continues; a missing secondary or internal source is reported as a gap after the available public evidence is answered. It still asks before risky actions or when multiple plausible entities remain.
 
+Workspace messages render trusted Commodity Center screenshot links from `platform-media.meitudata.com` as lazy-loaded, clickable inline previews. Other external links retain the standard link renderer and are never promoted to image content solely from their file extension.
+
 > [!IMPORTANT]
 > The Gateway still owns active run tasks in process, so production defaults to a single Gateway worker (`GATEWAY_WORKERS=1`). The Redis stream bridge (`stream_bridge.type: redis`) shares SSE delivery and `Last-Event-ID` replay across workers, with a rolling retained-buffer TTL (`stream_ttl_seconds`) as a cleanup safety net. Malformed reconnect IDs live-tail new events instead of replaying the retained buffer. It does not make run cancellation, request de-duplication, or IM channel state fully cross-worker by itself; use single-worker Gateway or explicit sticky routing/ownership before raising `GATEWAY_WORKERS`.
 
