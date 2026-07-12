@@ -16,6 +16,19 @@ test.describe("Sidebar navigation", () => {
       timeout: 15_000,
     });
     await expect(sidebar.locator("a[href='/workspace/agents']")).toHaveCount(0);
+    for (const label of [
+      "Subscriptions",
+      "External intel",
+      "Metric diagnosis",
+      "Knowledge search",
+      "Generate report",
+    ]) {
+      await expect(page.getByRole("button", { name: label })).toBeVisible();
+    }
+    await page.getByRole("button", { name: "Subscriptions" }).click();
+    await expect(page.getByRole("textbox")).toHaveValue(
+      "Research [topic]'s current subscription plans, prices, benefits, and paywall touchpoints. Include sources and capture dates.",
+    );
   });
 
   test("mobile welcome layout stays within viewport and opens sidebar", async ({
@@ -37,7 +50,13 @@ test.describe("Sidebar navigation", () => {
       expect(box!.x + box!.width).toBeLessThanOrEqual(viewportWidth + 1);
     };
 
-    await expectInsideViewport(page.getByText(/Welcome to|欢迎使用/).first());
+    await expectInsideViewport(
+      page
+        .getByText(
+          /Find clarity in complexity|从复杂里，找到答案/i,
+        )
+        .first(),
+    );
     await expectInsideViewport(page.getByRole("textbox").first());
     await expectInsideViewport(page.locator("[data-slot='suggestions-list']"));
 

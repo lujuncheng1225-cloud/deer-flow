@@ -1,10 +1,11 @@
 import {
+  BadgeDollarSignIcon,
+  BookOpenCheckIcon,
+  ChartNoAxesCombinedIcon,
   CompassIcon,
-  GraduationCapIcon,
+  FileTextIcon,
   ImageIcon,
-  MicroscopeIcon,
-  PenLineIcon,
-  ShapesIcon,
+  RadarIcon,
   SparklesIcon,
   VideoIcon,
 } from "lucide-react";
@@ -63,9 +64,8 @@ export const zhCN: Translations = {
 
   // Welcome
   welcome: {
-    greeting: "你好，欢迎回来！",
-    description:
-      "欢迎使用 美图商业化 aios，一个面向商业化调研与知识沉淀的超级智能体。通过内置和自定义的 Skills，\n美图商业化 aios 可以帮你搜索网络、分析数据，还能生成报告、表格、图片、视频、播客及网页等。",
+    greeting: "从复杂里，找到答案。",
+    description: "连接信息与数据，发现真正重要的事。",
 
     createYourOwnSkill: "创建你自己的 Agent SKill",
     createYourOwnSkillDescription:
@@ -180,24 +180,32 @@ export const zhCN: Translations = {
     compactFailed: "上下文压缩失败。",
     suggestions: [
       {
-        suggestion: "写作",
-        prompt: "撰写一篇关于[主题]的博客文章",
-        icon: PenLineIcon,
+        suggestion: "竞品订阅",
+        prompt:
+          "调研[主题]当前订阅套餐、价格、权益和全部付费触点，并标注来源与信息日期。",
+        icon: BadgeDollarSignIcon,
       },
       {
-        suggestion: "研究",
-        prompt: "深入浅出的研究一下[主题]，并总结发现。",
-        icon: MicroscopeIcon,
+        suggestion: "外部情报",
+        prompt: "梳理[主题]近期外部情报，优先核验官网、帮助中心与权威来源。",
+        icon: RadarIcon,
       },
       {
-        suggestion: "收集",
-        prompt: "从[来源]收集数据并创建报告。",
-        icon: ShapesIcon,
+        suggestion: "指标诊断",
+        prompt: "诊断[主题]核心商业化指标变化，区分事实、推断和数据缺口。",
+        icon: ChartNoAxesCombinedIcon,
       },
       {
-        suggestion: "学习",
-        prompt: "学习关于[主题]并创建教程。",
-        icon: GraduationCapIcon,
+        suggestion: "知识检索",
+        prompt:
+          "检索[主题]相关的已发布内部知识，并列出来源、适用范围和限制。",
+        icon: BookOpenCheckIcon,
+      },
+      {
+        suggestion: "生成报告",
+        prompt:
+          "基于当前对话和证据生成商业化分析报告，明确结论、依据、风险和下一步。",
+        icon: FileTextIcon,
       },
     ],
     suggestionsCreate: [

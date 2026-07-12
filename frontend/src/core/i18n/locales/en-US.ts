@@ -1,10 +1,11 @@
 import {
+  BadgeDollarSignIcon,
+  BookOpenCheckIcon,
+  ChartNoAxesCombinedIcon,
   CompassIcon,
-  GraduationCapIcon,
+  FileTextIcon,
   ImageIcon,
-  MicroscopeIcon,
-  PenLineIcon,
-  ShapesIcon,
+  RadarIcon,
   SparklesIcon,
   VideoIcon,
 } from "lucide-react";
@@ -63,9 +64,9 @@ export const enUS: Translations = {
 
   // Welcome
   welcome: {
-    greeting: "Hello, again!",
+    greeting: "Find clarity in complexity.",
     description:
-      "Welcome to Meitu Monetization aios, a super agent for monetization research and knowledge capture. With built-in and custom skills, it helps you search the web, analyze data, and generate reports, tables, images, videos, podcasts, and web pages.",
+      "Connect information and data to uncover what truly matters.",
 
     createYourOwnSkill: "Create Your Own Skill",
     createYourOwnSkillDescription:
@@ -192,25 +193,34 @@ export const enUS: Translations = {
     compactFailed: "Context compaction failed.",
     suggestions: [
       {
-        suggestion: "Write",
-        prompt: "Write a blog post about the latest trends on [topic]",
-        icon: PenLineIcon,
-      },
-      {
-        suggestion: "Research",
+        suggestion: "Subscriptions",
         prompt:
-          "Conduct a deep dive research on [topic], and summarize the findings.",
-        icon: MicroscopeIcon,
+          "Research [topic]'s current subscription plans, prices, benefits, and paywall touchpoints. Include sources and capture dates.",
+        icon: BadgeDollarSignIcon,
       },
       {
-        suggestion: "Collect",
-        prompt: "Collect data from [source] and create a report.",
-        icon: ShapesIcon,
+        suggestion: "External intel",
+        prompt:
+          "Review recent external intelligence about [topic], prioritizing official sites, help centers, and authoritative sources.",
+        icon: RadarIcon,
       },
       {
-        suggestion: "Learn",
-        prompt: "Learn about [topic] and create a tutorial.",
-        icon: GraduationCapIcon,
+        suggestion: "Metric diagnosis",
+        prompt:
+          "Diagnose changes in [topic]'s core monetization metrics, separating facts, inferences, and data gaps.",
+        icon: ChartNoAxesCombinedIcon,
+      },
+      {
+        suggestion: "Knowledge search",
+        prompt:
+          "Search published internal knowledge about [topic], listing sources, scope, and limitations.",
+        icon: BookOpenCheckIcon,
+      },
+      {
+        suggestion: "Generate report",
+        prompt:
+          "Create a monetization analysis report from this conversation and its evidence, covering conclusions, support, risks, and next steps.",
+        icon: FileTextIcon,
       },
     ],
     suggestionsCreate: [
