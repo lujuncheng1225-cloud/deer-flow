@@ -441,6 +441,15 @@ def test_system_prompt_template_requires_virtual_paths_for_output_images():
     assert "Call `present_files` for the image before referencing it" in template
 
 
+def test_system_prompt_template_proceeds_through_non_blocking_research_typos():
+    template = prompt_module.SYSTEM_PROMPT_TEMPLATE
+
+    assert "likely typo or awkward wording" in template
+    assert "state the assumption and proceed" in template
+    assert "low-risk information retrieval or research" in template
+    assert "multiple plausible entities remain" in template
+
+
 def test_system_prompt_template_preserves_placeholders():
     """Ensure the chunking-rule edit didn't drop any f-string placeholder
     consumed by apply_prompt_template(). A missing placeholder would
