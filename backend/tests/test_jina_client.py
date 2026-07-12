@@ -266,6 +266,59 @@ async def test_web_fetch_tool_uses_direct_fetch_fallback_on_crawl_failure(monkey
 
 
 @pytest.mark.anyio
+async def test_web_fetch_tool_uses_direct_fetch_before_jina_when_configured(monkeypatch):
+    crawl_calls = 0
+
+    async def mock_crawl(self, url, **kwargs):
+        nonlocal crawl_calls
+        crawl_calls += 1
+        return "<html><body><p>Jina should not be needed.</p></body></html>"
+
+    async def mock_direct_fetch(url, **kwargs):
+        return "<html><body><main><p>" + ("Official Manus pricing details. " * 20) + "</p></main></body></html>"
+
+    mock_config = MagicMock()
+    mock_tool_config = MagicMock()
+    mock_tool_config.model_extra = {
+        "direct_first": True,
+        "direct_min_characters": 100,
+    }
+    mock_config.get_tool_config.return_value = mock_tool_config
+    monkeypatch.setattr("deerflow.community.jina_ai.tools.get_app_config", lambda: mock_config)
+    monkeypatch.setattr(JinaClient, "crawl", mock_crawl)
+    monkeypatch.setattr("deerflow.community.jina_ai.tools._direct_fetch_html", mock_direct_fetch)
+
+    result = await web_fetch_tool.ainvoke("https://manus.im/pricing")
+
+    assert "Official Manus pricing details" in result
+    assert crawl_calls == 0
+
+
+@pytest.mark.anyio
+async def test_web_fetch_tool_uses_jina_when_direct_content_is_too_short(monkeypatch):
+    async def mock_crawl(self, url, **kwargs):
+        return "<html><body><main><p>Jina rendered pricing content with complete plan details.</p></main></body></html>"
+
+    async def mock_direct_fetch(url, **kwargs):
+        return "<html><body><p>Loading</p></body></html>"
+
+    mock_config = MagicMock()
+    mock_tool_config = MagicMock()
+    mock_tool_config.model_extra = {
+        "direct_first": True,
+        "direct_min_characters": 100,
+    }
+    mock_config.get_tool_config.return_value = mock_tool_config
+    monkeypatch.setattr("deerflow.community.jina_ai.tools.get_app_config", lambda: mock_config)
+    monkeypatch.setattr(JinaClient, "crawl", mock_crawl)
+    monkeypatch.setattr("deerflow.community.jina_ai.tools._direct_fetch_html", mock_direct_fetch)
+
+    result = await web_fetch_tool.ainvoke("https://manus.im/pricing")
+
+    assert "Jina rendered pricing content" in result
+
+
+@pytest.mark.anyio
 async def test_web_fetch_tool_returns_markdown_on_success(monkeypatch):
     """Test that web_fetch_tool returns extracted markdown on successful crawl."""
 

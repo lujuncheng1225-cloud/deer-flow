@@ -18,9 +18,27 @@ logger = logging.getLogger(__name__)
 DEFAULT_BACKEND = "auto"
 DEFAULT_REGION = "wt-wt"
 DEFAULT_SAFESEARCH = "moderate"
+DEFAULT_SEARCH_TIMEOUT = 30
+DEFAULT_DIRECT_SITE_TIMEOUT = 8
 DEFAULT_WIKIPEDIA_REGION = "us-en"
 WIKIPEDIA_FALLBACK_BACKEND = "wikipedia"
-DIRECT_SITE_TLDS = ("im", "ai", "com", "io", "app")
+DIRECT_SITE_TLDS = ("com", "app", "io", "ai", "im")
+DIRECT_SITE_AI_TLDS = ("ai", "com", "app", "io", "im")
+DIRECT_SITE_INTENT_TERMS = (
+    "official",
+    "website",
+    "price",
+    "pricing",
+    "plan",
+    "plans",
+    "subscription",
+    "subscribe",
+    "官网",
+    "价格",
+    "定价",
+    "套餐",
+    "订阅",
+)
 DIRECT_SITE_STOPWORDS = {
     "agent",
     "analysis",
@@ -81,6 +99,28 @@ def _normalize_setting(value: str | None, default: str) -> str:
     return str(value).strip() if value else default
 
 
+def _coerce_positive_int(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _coerce_bool(value: object, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
 def _backend_includes_wikipedia(backend: str | list[str] | tuple[str, ...] | None) -> bool:
     backend = _normalize_backend(backend)
     return any(part.strip().lower() in WIKIPEDIA_BACKENDS for part in backend.split(","))
@@ -134,6 +174,7 @@ def _search_text(
     region: str | None = DEFAULT_REGION,
     safesearch: str | None = DEFAULT_SAFESEARCH,
     backend: str | list[str] | tuple[str, ...] | None = DEFAULT_BACKEND,
+    timeout: int = DEFAULT_SEARCH_TIMEOUT,
 ) -> list[dict]:
     """
     Execute text search using DuckDuckGo.
@@ -154,7 +195,7 @@ def _search_text(
         logger.error("ddgs library not installed. Run: pip install ddgs")
         return []
 
-    ddgs = DDGS(timeout=30)
+    ddgs = DDGS(timeout=timeout)
 
     try:
         backend = _normalize_backend(backend)
@@ -219,19 +260,20 @@ def _candidate_direct_site_urls(query: str) -> list[str]:
         if len(brand_tokens) >= 2:
             break
 
+    tlds = DIRECT_SITE_AI_TLDS if re.search(r"\bai\b", query, flags=re.IGNORECASE) else DIRECT_SITE_TLDS
     for token in brand_tokens:
-        for tld in DIRECT_SITE_TLDS:
+        for tld in tlds:
             add_host(f"{token}.{tld}")
 
     return candidates[:10]
 
 
-def _fetch_direct_site_result(url: str) -> dict | None:
+def _fetch_direct_site_result(url: str, timeout: int = DEFAULT_DIRECT_SITE_TIMEOUT) -> dict | None:
     try:
         response = httpx.get(
             url,
             follow_redirects=True,
-            timeout=8,
+            timeout=timeout,
             headers={"User-Agent": "DeerFlow web_search direct-site fallback"},
         )
         response.raise_for_status()
@@ -251,16 +293,23 @@ def _fetch_direct_site_result(url: str) -> dict | None:
     }
 
 
-def _search_direct_site_fallback(query: str, max_results: int) -> list[dict]:
+def _search_direct_site_fallback(query: str, max_results: int, timeout: int = DEFAULT_DIRECT_SITE_TIMEOUT) -> list[dict]:
     results: list[dict] = []
     for url in _candidate_direct_site_urls(query):
-        result = _fetch_direct_site_result(url)
+        result = _fetch_direct_site_result(url, timeout=timeout)
         if result is None:
             continue
         results.append(result)
         if len(results) >= max_results:
             break
     return results
+
+
+def _should_try_direct_site_first(query: str) -> bool:
+    normalized = query.lower()
+    has_explicit_domain = re.search(r"\b[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+\b", query) is not None
+    has_commercial_intent = any(term in normalized for term in DIRECT_SITE_INTENT_TERMS)
+    return has_explicit_domain or (has_commercial_intent and bool(_candidate_direct_site_urls(query)))
 
 
 def _search_serper_fallback(query: str, max_results: int) -> list[dict]:
@@ -313,6 +362,7 @@ def _search_wikipedia_fallback(
     region: str | None,
     safesearch: str | None,
     backend: str | list[str] | tuple[str, ...] | None,
+    timeout: int,
 ) -> list[dict]:
     backend_parts = {part.strip().lower() for part in _normalize_backend(backend).split(",")}
     if WIKIPEDIA_FALLBACK_BACKEND in backend_parts or "all" in backend_parts:
@@ -324,6 +374,7 @@ def _search_wikipedia_fallback(
         region=region,
         safesearch=safesearch,
         backend=WIKIPEDIA_FALLBACK_BACKEND,
+        timeout=timeout,
     )
     return [
         {
@@ -351,6 +402,10 @@ def web_search_tool(
     region = DEFAULT_REGION
     safesearch = DEFAULT_SAFESEARCH
     backend = DEFAULT_BACKEND
+    timeout = DEFAULT_SEARCH_TIMEOUT
+    direct_site_first = False
+    direct_site_timeout = DEFAULT_DIRECT_SITE_TIMEOUT
+    direct_site_max_results = 1
 
     if config is not None:
         # Override tool call defaults from config if set.
@@ -358,16 +413,29 @@ def web_search_tool(
         region = config.model_extra.get("region", region)
         safesearch = config.model_extra.get("safesearch", safesearch)
         backend = config.model_extra.get("backend", backend)
+        timeout = _coerce_positive_int(config.model_extra.get("timeout"), timeout)
+        direct_site_first = _coerce_bool(config.model_extra.get("direct_site_first"), direct_site_first)
+        direct_site_timeout = _coerce_positive_int(config.model_extra.get("direct_site_timeout"), direct_site_timeout)
+        direct_site_max_results = _coerce_positive_int(config.model_extra.get("direct_site_max_results"), direct_site_max_results)
 
-    providers_attempted = [f"ddg:{_normalize_backend(backend)}"]
-    results = _search_text(
-        query=query,
-        max_results=max_results,
-        region=region,
-        safesearch=safesearch,
-        backend=backend,
-    )
+    providers_attempted: list[str] = []
+    results: list[dict] = []
     provider = "ddg"
+    if direct_site_first and _should_try_direct_site_first(query):
+        providers_attempted.append("direct_site_fallback")
+        results = _search_direct_site_fallback(query, min(max_results, direct_site_max_results), timeout=direct_site_timeout)
+        if results:
+            provider = "direct_site_fallback"
+    if not results:
+        providers_attempted.append(f"ddg:{_normalize_backend(backend)}")
+        results = _search_text(
+            query=query,
+            max_results=max_results,
+            region=region,
+            safesearch=safesearch,
+            backend=backend,
+            timeout=timeout,
+        )
     if not results:
         providers_attempted.append("serper_fallback")
         results = _search_serper_fallback(query, max_results)
@@ -375,7 +443,7 @@ def web_search_tool(
             provider = "serper_fallback"
     if not results:
         providers_attempted.append("direct_site_fallback")
-        results = _search_direct_site_fallback(query, max_results)
+        results = _search_direct_site_fallback(query, min(max_results, direct_site_max_results), timeout=direct_site_timeout)
         if results:
             provider = "direct_site_fallback"
     if not results:
@@ -386,6 +454,7 @@ def web_search_tool(
             region=region,
             safesearch=safesearch,
             backend=backend,
+            timeout=timeout,
         )
         if results:
             provider = "wikipedia_fallback"

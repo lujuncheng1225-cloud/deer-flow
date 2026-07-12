@@ -77,6 +77,11 @@ async def _direct_fetch_html(url: str, timeout: int, proxy: str | None, trust_en
         return None
 
 
+async def _extract_markdown(html_content: str) -> str:
+    article = await asyncio.to_thread(readability_extractor.extract_article, html_content)
+    return article.to_markdown()[:4096]
+
+
 @tool("web_fetch", parse_docstring=True)
 async def web_fetch_tool(url: str) -> str:
     """Fetch the contents of a web page at a given URL.
@@ -92,16 +97,33 @@ async def web_fetch_tool(url: str) -> str:
     timeout = 10
     proxy = None
     trust_env = True
+    direct_first = False
+    direct_min_characters = 200
     config = get_app_config().get_tool_config("web_fetch")
     if config is not None:
         timeout = _coerce_timeout(config.model_extra.get("timeout"), timeout)
         proxy = _coerce_proxy(config.model_extra.get("proxy"))
         trust_env = _coerce_bool(config.model_extra.get("trust_env"), trust_env)
+        direct_first = _coerce_bool(config.model_extra.get("direct_first"), direct_first)
+        direct_min_characters = _coerce_timeout(config.model_extra.get("direct_min_characters"), direct_min_characters)
+
+    direct_html = None
+    direct_markdown = None
+    if direct_first:
+        direct_html = await _direct_fetch_html(url, timeout=timeout, proxy=proxy, trust_env=trust_env)
+        if direct_html is not None:
+            try:
+                direct_markdown = await _extract_markdown(direct_html)
+            except Exception:
+                direct_markdown = None
+            if direct_markdown is not None and len(direct_markdown.strip()) >= max(0, direct_min_characters):
+                return direct_markdown
+
     html_content = await jina_client.crawl(url, return_format="html", timeout=timeout, proxy=proxy, trust_env=trust_env)
     if isinstance(html_content, str) and html_content.startswith("Error:"):
-        direct_html = await _direct_fetch_html(url, timeout=timeout, proxy=proxy, trust_env=trust_env)
+        if direct_html is None:
+            direct_html = await _direct_fetch_html(url, timeout=timeout, proxy=proxy, trust_env=trust_env)
         if direct_html is None:
             return html_content
-        html_content = direct_html
-    article = await asyncio.to_thread(readability_extractor.extract_article, html_content)
-    return article.to_markdown()[:4096]
+        return direct_markdown if direct_markdown is not None else await _extract_markdown(direct_html)
+    return await _extract_markdown(html_content)

@@ -56,6 +56,7 @@ def test_web_search_tool_reads_ddgs_options_from_config() -> None:
             "region": "us-en",
             "safesearch": "off",
             "backend": "auto",
+            "timeout": 6,
         }
         mock_config.return_value.get_tool_config.return_value = tool_config
 
@@ -74,6 +75,69 @@ def test_web_search_tool_reads_ddgs_options_from_config() -> None:
         region="us-en",
         safesearch="off",
         backend="auto",
+        timeout=6,
+    )
+
+
+def test_web_search_tool_uses_direct_site_first_for_commercial_brand_query() -> None:
+    with patch("deerflow.community.ddg_search.tools.get_app_config") as mock_config:
+        tool_config = MagicMock()
+        tool_config.model_extra = {
+            "max_results": 3,
+            "direct_site_first": True,
+            "direct_site_timeout": 4,
+            "direct_site_max_results": 1,
+        }
+        mock_config.return_value.get_tool_config.return_value = tool_config
+
+        with (
+            patch("deerflow.community.ddg_search.tools._search_text") as mock_search,
+            patch("deerflow.community.ddg_search.tools._search_direct_site_fallback") as mock_direct,
+        ):
+            mock_direct.return_value = [
+                {
+                    "title": "Manus: Hands On AI",
+                    "href": "https://manus.im/",
+                    "body": "Official site candidate for manus.im",
+                    "provider": "direct_site_fallback",
+                }
+            ]
+
+            result = tools.web_search_tool.invoke({"query": "Manus AI subscription pricing", "max_results": 8})
+            parsed = json.loads(result)
+
+    assert parsed["provider"] == "direct_site_fallback"
+    assert parsed["providers_attempted"] == ["direct_site_fallback"]
+    assert parsed["results"][0]["url"] == "https://manus.im/"
+    mock_direct.assert_called_once_with("Manus AI subscription pricing", 1, timeout=4)
+    mock_search.assert_not_called()
+
+
+def test_web_search_tool_keeps_ddgs_first_for_generic_query() -> None:
+    with patch("deerflow.community.ddg_search.tools.get_app_config") as mock_config:
+        tool_config = MagicMock()
+        tool_config.model_extra = {
+            "direct_site_first": True,
+            "timeout": 6,
+        }
+        mock_config.return_value.get_tool_config.return_value = tool_config
+
+        with (
+            patch("deerflow.community.ddg_search.tools._search_text") as mock_search,
+            patch("deerflow.community.ddg_search.tools._search_direct_site_fallback") as mock_direct,
+        ):
+            mock_search.return_value = [{"title": "Result", "href": "https://example.com", "body": "Snippet"}]
+            result = tools.web_search_tool.invoke({"query": "latest AI industry news", "max_results": 5})
+
+    assert json.loads(result)["provider"] == "ddg"
+    mock_direct.assert_not_called()
+    mock_search.assert_called_once_with(
+        query="latest AI industry news",
+        max_results=5,
+        region="wt-wt",
+        safesearch="moderate",
+        backend="auto",
+        timeout=6,
     )
 
 
@@ -165,15 +229,15 @@ def test_web_search_tool_uses_direct_site_fallback_before_wikipedia() -> None:
     assert parsed["provider"] == "direct_site_fallback"
     assert parsed["providers_attempted"] == ["ddg:auto", "serper_fallback", "direct_site_fallback"]
     assert parsed["results"][0]["url"] == "https://manus.im/"
-    mock_direct.assert_called_once_with("Manus AI agent", 3)
+    mock_direct.assert_called_once_with("Manus AI agent", 1, timeout=8)
     mock_wikipedia.assert_not_called()
 
 
 def test_candidate_direct_site_urls_builds_brand_domain_candidates() -> None:
     assert tools._candidate_direct_site_urls("Manus AI agent")[:3] == [
-        "https://manus.im/",
         "https://manus.ai/",
         "https://manus.com/",
+        "https://manus.app/",
     ]
 
 

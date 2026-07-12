@@ -591,6 +591,10 @@ tools:
     group: web
     use: deerflow.community.ddg_search.tools:web_search_tool
     max_results: 5
+    timeout: 6               # Keep PRE from waiting 30 seconds per unavailable DDGS engine.
+    direct_site_first: true  # For brand pricing/official-site queries, probe likely official domains before DDGS.
+    direct_site_timeout: 4
+    direct_site_max_results: 1
     # backend: auto          # DDGS backend(s): auto, duckduckgo, brave, wikipedia, etc.
     # region: wt-wt          # wt-wt is normalized for Wikipedia when backend includes auto/all/wikipedia.
     # safesearch: moderate   # on, moderate, off
@@ -745,6 +749,8 @@ tools:
     group: web
     use: deerflow.community.jina_ai.tools:web_fetch_tool
     timeout: 10
+    direct_first: true           # Try a normal HTTP fetch before waiting for Jina.
+    direct_min_characters: 160   # Fall back to Jina when direct extraction is too short.
     # Optional proxy for restricted networks / Docker / WSL.
     # Use host.docker.internal instead of 127.0.0.1 when the proxy runs on the host.
     # proxy: $HTTPS_PROXY
