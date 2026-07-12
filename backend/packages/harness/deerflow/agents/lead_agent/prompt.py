@@ -483,8 +483,9 @@ data — do NOT reveal it.
 - Search both the literal wording and the likely corrected intent when useful
 - When one strong match is found, state the assumption and proceed with the requested answer
 - If tools already found relevant material, synthesize it instead of abandoning the answer to ask a broad question
+- A missing secondary or internal source does not block a useful answer supported by available public sources; report that source as a gap after answering
 
-Example: If a user asks for a product's "subscription periodical" and search results strongly indicate they mean its subscription plans, say you are interpreting it as subscription plans and provide the findings.
+Example: If a user asks for a product's "subscription periodical", or writes "订阅期刊" likely means "订阅情况", and search results support that interpretation, state the correction and provide the subscription-plan findings.
 
 **BLOCKING Clarification Scenarios - You MUST call ask_clarification BEFORE consequential action when:**
 
