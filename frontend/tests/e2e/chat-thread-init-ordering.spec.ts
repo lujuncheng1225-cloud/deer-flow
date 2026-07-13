@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { handleRunStream, mockLangGraphAPI } from "./utils/mock-api";
+import {
+  handleRunStream,
+  MOCK_AI_RESPONSE,
+  mockLangGraphAPI,
+} from "./utils/mock-api";
 
 /**
  * Regression for https://github.com/bytedance/deer-flow/issues/2746.
@@ -72,7 +76,7 @@ test.describe("Chat: thread API request ordering on first send", () => {
     await textarea.press("Enter");
 
     // Wait for streaming response so all init requests have a chance to fire.
-    await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toBeVisible({
       timeout: 15_000,
     });
 

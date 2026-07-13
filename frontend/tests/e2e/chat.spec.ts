@@ -1,6 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { handleRunStream, mockLangGraphAPI } from "./utils/mock-api";
+import {
+  handleRunStream,
+  MOCK_AI_RESPONSE,
+  mockLangGraphAPI,
+} from "./utils/mock-api";
 
 test.describe("Chat workspace", () => {
   test.beforeEach(async ({ page }) => {
@@ -252,7 +256,7 @@ test.describe("Chat workspace", () => {
       page.locator("span.font-medium", { hasText: "finish all tests" }),
     ).toBeVisible();
     await expect.poll(() => streamCalls).toBe(1);
-    await expect(page.getByText("Hello from DeerFlow!")).toBeVisible();
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toBeVisible();
   });
 
   test("goal command keeps the welcome header clear of the goal status", async ({
@@ -395,7 +399,7 @@ test.describe("Chat workspace", () => {
     await expect.poll(() => streamCalled, { timeout: 10_000 }).toBeTruthy();
 
     // The AI response should appear in the chat
-    await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toBeVisible({
       timeout: 10_000,
     });
   });
@@ -433,9 +437,9 @@ test.describe("Chat workspace", () => {
     const textarea = page.getByPlaceholder(/how can i assist you/i);
     await expect(textarea).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole("button", { name: /research/i }).click();
+    await page.getByRole("button", { name: /subscriptions/i }).click();
     await expect(textarea).toHaveValue(
-      "Conduct a deep dive research on [topic], and summarize the findings.",
+      "Research [topic]'s current subscription plans, prices, benefits, and paywall touchpoints. Include sources and capture dates.",
     );
 
     await textarea.press("Enter");
@@ -443,7 +447,7 @@ test.describe("Chat workspace", () => {
 
     expect(streamCalled).toBe(false);
     await expect(textarea).toHaveValue(
-      "Conduct a deep dive research on [topic], and summarize the findings.",
+      "Research [topic]'s current subscription plans, prices, benefits, and paywall touchpoints. Include sources and capture dates.",
     );
     await expect
       .poll(
@@ -458,7 +462,7 @@ test.describe("Chat workspace", () => {
 
     await textarea.pressSequentially("AI agents");
     await expect(textarea).toHaveValue(
-      "Conduct a deep dive research on AI agents, and summarize the findings.",
+      "Research AI agents's current subscription plans, prices, benefits, and paywall touchpoints. Include sources and capture dates.",
     );
 
     await textarea.press("Enter");
@@ -467,7 +471,7 @@ test.describe("Chat workspace", () => {
     await expect
       .poll(() => submittedText, { timeout: 10_000 })
       .toBe(
-        "Conduct a deep dive research on AI agents, and summarize the findings.",
+        "Research AI agents's current subscription plans, prices, benefits, and paywall touchpoints. Include sources and capture dates.",
       );
   });
 
@@ -509,7 +513,7 @@ test.describe("Chat workspace", () => {
     await expect
       .poll(() => submittedText, { timeout: 10_000 })
       .toBe(slashCommand);
-    await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toBeVisible({
       timeout: 10_000,
     });
   });
@@ -610,7 +614,7 @@ test.describe("Chat workspace", () => {
           status: "uploaded",
         },
       ]);
-    await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toBeVisible({
       timeout: 10_000,
     });
   });
@@ -667,7 +671,7 @@ test.describe("Chat workspace", () => {
     const textarea = page.locator('textarea[name="message"]');
     await textarea.fill("Continue without the rejected attachment");
     await textarea.press("Enter");
-    await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toBeVisible({
       timeout: 10_000,
     });
     expect(uploadCalled).toBe(false);
@@ -778,7 +782,7 @@ test.describe("Chat workspace", () => {
     await expect(promptForm.getByText("report.docx")).toBeVisible();
 
     releaseUpload();
-    await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toBeVisible({
       timeout: 10_000,
     });
     await expect(promptForm.getByText("report.docx")).toBeHidden();
@@ -820,7 +824,7 @@ test.describe("Chat workspace", () => {
     await textarea.press("Enter");
 
     await expect.poll(() => streamCalled, { timeout: 10_000 }).toBeTruthy();
-    await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toBeVisible({
       timeout: 10_000,
     });
     await page.waitForTimeout(1000);

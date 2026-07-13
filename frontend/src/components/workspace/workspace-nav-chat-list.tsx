@@ -13,10 +13,13 @@ import {
 import { useI18n } from "@/core/i18n/hooks";
 import { useProjectScope } from "@/core/project-scope/context";
 
+import { resetThreadChatForNewConversation } from "./chats/use-thread-chat";
+
 export function WorkspaceNavChatList() {
   const { t } = useI18n();
   const pathname = usePathname();
   const { workspacePath } = useProjectScope();
+  const newChatPath = workspacePath("/workspace/chats/new");
   return (
     <SidebarGroup className="pt-1">
       <SidebarMenu>
@@ -27,7 +30,8 @@ export function WorkspaceNavChatList() {
           >
             <Link
               className="text-muted-foreground"
-              href={workspacePath("/workspace/chats/new")}
+              href={newChatPath}
+              onClick={() => resetThreadChatForNewConversation(newChatPath)}
             >
               <MessagesSquare />
               <span>{t.sidebar.chats}</span>

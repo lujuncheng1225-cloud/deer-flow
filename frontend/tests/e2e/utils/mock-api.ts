@@ -16,6 +16,7 @@ export const MOCK_THREAD_ID = "00000000-0000-0000-0000-000000000001";
 export const MOCK_THREAD_ID_2 = "00000000-0000-0000-0000-000000000002";
 export const MOCK_SIDECAR_THREAD_ID = "00000000-0000-0000-0000-0000000000aa";
 export const MOCK_RUN_ID = "00000000-0000-0000-0000-000000000099";
+const MOCK_PROJECT_ID = "e2e";
 
 const MOCK_AUTH_USER = {
   id: "default",
@@ -156,6 +157,25 @@ function branchMessagesFromTurn(messages: unknown[], targetIds: Set<string>) {
   return targetEndIndex >= 0 ? messages.slice(0, targetEndIndex + 1) : messages;
 }
 
+function mockPersistedMessages(thread: MockThread): unknown[] {
+  return (
+    thread.messages ?? [
+      {
+        type: "human",
+        id: `msg-human-${thread.thread_id}`,
+        content: [{ type: "text", text: "Previous question" }],
+      },
+      {
+        type: "ai",
+        id: `msg-ai-${thread.thread_id}`,
+        content: `Response in thread ${thread.title ?? thread.thread_id}`,
+      },
+    ]
+  );
+}
+
+export const MOCK_AI_RESPONSE = "Hello from test agent!";
+
 function mockStreamMessages(route?: Route, inputMessages?: unknown[]) {
   const submittedMessages = inputMessages
     ? visibleInputMessages(inputMessages)
@@ -165,7 +185,7 @@ function mockStreamMessages(route?: Route, inputMessages?: unknown[]) {
   const responseMessage = {
     type: "ai",
     id: "msg-ai-1",
-    content: "Hello from DeerFlow!",
+    content: MOCK_AI_RESPONSE,
   };
   if (submittedMessages.length > 0) {
     return [...submittedMessages, responseMessage];
@@ -245,6 +265,23 @@ export function mockLangGraphAPI(page: Page, options?: MockAPIOptions) {
     max_total_size: 100 * 1024 * 1024,
   };
 
+  void page.route("**/workspace/**", (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (
+      request.isNavigationRequest() &&
+      request.method() === "GET" &&
+      !url.searchParams.has("project")
+    ) {
+      url.searchParams.set("project", MOCK_PROJECT_ID);
+      return route.fulfill({
+        status: 307,
+        headers: { location: url.toString() },
+      });
+    }
+    return route.fallback();
+  });
+
   const upsertThread = (thread: MockThread) => {
     threads = [
       thread,
@@ -261,8 +298,69 @@ export function mockLangGraphAPI(page: Page, options?: MockAPIOptions) {
       ...(thread.agent_name ? { agent_name: thread.agent_name } : {}),
     },
     status: "idle",
-    values: { title: thread.title ?? "Untitled", goal: thread.goal ?? null },
+    values: {
+      title: thread.title ?? "Untitled",
+      goal: thread.goal ?? null,
+      artifacts: thread.artifacts ?? [],
+    },
   });
+
+  void page.route(/\/projects$/, (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            project: {
+              project_id: MOCK_PROJECT_ID,
+              product_name: "E2E Project",
+            },
+          },
+        ]),
+      });
+    }
+    return route.fallback();
+  });
+
+  void page.route(
+    new RegExp(`/projects/${MOCK_PROJECT_ID}/conversations$`),
+    (route) => {
+      if (route.request().method() === "GET") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(
+            threads.map((thread) => ({
+              conversation_id: `conversation-${thread.thread_id}`,
+              project_id: MOCK_PROJECT_ID,
+              title: thread.title ?? "Untitled",
+              sidecar_thread_id: thread.thread_id,
+              updated_at: thread.updated_at ?? "2025-01-01T00:00:00Z",
+            })),
+          ),
+        });
+      }
+      if (route.request().method() === "POST") {
+        const body = route.request().postDataJSON() as {
+          sidecar_thread_id: string;
+          title: string;
+        };
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            conversation_id: `conversation-${body.sidecar_thread_id}`,
+            project_id: MOCK_PROJECT_ID,
+            title: body.title,
+            sidecar_thread_id: body.sidecar_thread_id,
+            updated_at: new Date().toISOString(),
+          }),
+        });
+      }
+      return route.fallback();
+    },
+  );
 
   // Auth — keep workspace tests independent from a real gateway session.
   void page.route("**/api/v1/auth/me", (route) => {
@@ -714,6 +812,44 @@ export function mockLangGraphAPI(page: Page, options?: MockAPIOptions) {
     return route.fallback();
   });
 
+  void page.route(/\/api\/threads\/[^/]+\/messages(\?|$)/, (route) => {
+    if (route.request().method() === "GET") {
+      const threadId = decodeURIComponent(
+        new URL(route.request().url()).pathname.split("/").at(-2) ?? "",
+      );
+      const matchingThread = threads.find(
+        (thread) => thread.thread_id === threadId,
+      );
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          (matchingThread ? mockPersistedMessages(matchingThread) : []).map(
+            (message, index) => ({
+              run_id: `run-${threadId}`,
+              seq: index + 1,
+              content: message,
+              metadata: { caller: "lead_agent" },
+              created_at: `2025-01-01T00:00:${String(index).padStart(2, "0")}Z`,
+            }),
+          ),
+        ),
+      });
+    }
+    return route.fallback();
+  });
+
+  void page.route(/\/api\/threads\/[^/]+\/artifacts\//, (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill({
+        status: 200,
+        contentType: "text/markdown",
+        body: "# Mock artifact\n",
+      });
+    }
+    return route.fallback();
+  });
+
   void page.route(/\/api\/threads\/[^/]+\/branches$/, (route) => {
     if (route.request().method() === "POST") {
       const pathParts = new URL(route.request().url()).pathname.split("/");
@@ -977,6 +1113,33 @@ export function mockLangGraphAPI(page: Page, options?: MockAPIOptions) {
     },
   );
 
+  void page.route(
+    /\/api\/threads\/[^/]+\/runs\/[^/]+\/workspace-changes(\?|$)/,
+    (route) => {
+      if (route.request().method() === "GET") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            available: false,
+            version: 1,
+            summary: {
+              created: 0,
+              modified: 0,
+              deleted: 0,
+              additions: 0,
+              deletions: 0,
+              truncated: false,
+            },
+            files: [],
+            limits: {},
+          }),
+        });
+      }
+      return route.fallback();
+    },
+  );
+
   // Run stream — returns a minimal SSE response with an AI message
   const handleMockRunStream = (route: Route) => {
     const threadId = runStreamThreadId(route);
@@ -1094,7 +1257,7 @@ export function mockLangGraphAPI(page: Page, options?: MockAPIOptions) {
 
 /**
  * Build a minimal SSE stream that the LangGraph SDK can parse.
- * The stream returns a single AI message: "Hello from DeerFlow!".
+ * The stream returns a single AI message using `MOCK_AI_RESPONSE`.
  */
 export function handleRunStream(
   route: Route,

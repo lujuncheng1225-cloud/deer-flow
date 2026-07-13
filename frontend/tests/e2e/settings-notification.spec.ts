@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { mockLangGraphAPI } from "./utils/mock-api";
+import { MOCK_AI_RESPONSE, mockLangGraphAPI } from "./utils/mock-api";
 
 declare global {
   interface Window {
@@ -81,7 +81,7 @@ test.describe("Notification settings", () => {
       .poll(() => page.evaluate(() => window.__deerflowNotifications ?? []))
       .toEqual([
         {
-          title: "DeerFlow",
+          title: "美图商业化 aios",
           body: "This is a test notification.",
         },
       ]);
@@ -108,7 +108,7 @@ test.describe("Notification settings", () => {
       .toEqual([
         {
           title: "New Chat",
-          body: "Hello from DeerFlow!",
+          body: MOCK_AI_RESPONSE,
         },
       ]);
   });

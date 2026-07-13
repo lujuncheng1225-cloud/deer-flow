@@ -12,7 +12,7 @@ test.describe("Sidebar navigation", () => {
 
     // Sidebar uses data-sidebar="menu-button" with asChild rendering on <Link>
     const sidebar = page.locator("[data-sidebar='sidebar']");
-    await expect(sidebar.locator("a[href='/workspace/chats']")).toBeVisible({
+    await expect(sidebar.getByRole("link", { name: "Chats" })).toBeVisible({
       timeout: 15_000,
     });
     await expect(sidebar.locator("a[href='/workspace/agents']")).toHaveCount(0);
@@ -67,7 +67,7 @@ test.describe("Sidebar navigation", () => {
     );
     await expect(mobileSidebar).toBeVisible();
     await expect(
-      mobileSidebar.locator("a[href='/workspace/chats']"),
+      mobileSidebar.getByRole("link", { name: "Chats" }),
     ).toBeVisible();
     await expect(
       mobileSidebar.locator("a[href='/workspace/agents']"),

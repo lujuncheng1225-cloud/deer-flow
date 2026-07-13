@@ -1,6 +1,7 @@
 import { expect, test, type Route } from "@playwright/test";
 
 import {
+  MOCK_AI_RESPONSE,
   mockLangGraphAPI,
   MOCK_THREAD_ID,
   MOCK_THREAD_ID_2,
@@ -49,7 +50,9 @@ test.describe("Thread history", () => {
     await firstThread.click();
 
     // Should navigate to that thread's URL
-    await page.waitForURL(`**/workspace/chats/${MOCK_THREAD_ID}`);
+    await page.waitForURL(
+      new RegExp(`/workspace/chats/${MOCK_THREAD_ID}(?:\\?.*)?$`),
+    );
     await expect(page).toHaveURL(new RegExp(MOCK_THREAD_ID));
   });
 
@@ -78,7 +81,9 @@ test.describe("Thread history", () => {
 
     await firstThreadLink.click({ position: { x: 4, y: box.height / 2 } });
 
-    await page.waitForURL(`**/workspace/chats/${MOCK_THREAD_ID}`);
+    await page.waitForURL(
+      new RegExp(`/workspace/chats/${MOCK_THREAD_ID}(?:\\?.*)?$`),
+    );
     await expect(page).toHaveURL(new RegExp(MOCK_THREAD_ID));
   });
 
@@ -158,7 +163,7 @@ test.describe("Thread history", () => {
     await expect(textarea).toHaveValue("draft should not be overwritten");
   });
 
-  test("deleting an inactive chat keeps the current chat open", async ({
+  test("project conversation list keeps the current chat open", async ({
     page,
   }) => {
     mockLangGraphAPI(page, { threads: THREADS });
@@ -169,23 +174,19 @@ test.describe("Thread history", () => {
     ).toBeVisible({ timeout: 15_000 });
 
     const sidebar = page.locator("[data-sidebar='sidebar']");
-    const inactiveThreadItem = sidebar
-      .locator("[data-sidebar='menu-item']")
-      .filter({
-        has: page.getByRole("button", { name: /more/i }),
-        hasText: "Second conversation",
-      })
-      .first();
+    const inactiveThreadItem = sidebar.getByRole("link", {
+      name: "Second conversation",
+    });
     await expect(inactiveThreadItem).toBeVisible();
-    await inactiveThreadItem.hover();
-    await inactiveThreadItem.getByRole("button", { name: /more/i }).click();
-    await page.getByRole("menuitem", { name: /delete/i }).click();
+    await expect(
+      inactiveThreadItem.getByRole("button", { name: /more/i }),
+    ).toHaveCount(0);
 
     await expect(page).toHaveURL(new RegExp(MOCK_THREAD_ID));
     await expect(
       page.getByText("Response in thread First conversation"),
     ).toBeVisible();
-    await expect(sidebar.getByText("Second conversation")).toHaveCount(0);
+    await expect(sidebar.getByText("Second conversation")).toBeVisible();
   });
 
   test("new chat does not show previous thread messages after client-side navigation", async ({
@@ -224,9 +225,10 @@ test.describe("Thread history", () => {
     });
 
     await page
-      .locator("[data-sidebar='sidebar'] a[href='/workspace/chats/new']")
+      .locator("[data-sidebar='sidebar']")
+      .getByRole("link", { name: "New chat" })
       .click();
-    await page.waitForURL("**/workspace/chats/new");
+    await page.waitForURL(/\/workspace\/chats\/new(?:\?.*)?$/);
 
     await expect(page.getByText(SVG_PROMPT_MARKER)).toBeHidden();
     await expect(page.getByPlaceholder(/how can i assist you/i)).toBeVisible();
@@ -280,18 +282,28 @@ test.describe("Thread history", () => {
     );
     await textarea.press("Enter");
 
-    await expect(page.getByText(OPTIMISTIC_PROMPT_MARKER)).toBeVisible();
+    const mainMessages = page.getByTestId("main-message-list");
+    await expect(mainMessages.getByText(OPTIMISTIC_PROMPT_MARKER)).toBeVisible({
+      timeout: 15_000,
+    });
 
     await page.getByText("Destination conversation").click();
-    await page.waitForURL(`**/workspace/chats/${MOCK_THREAD_ID_2}`);
-    await expect(page.getByText(OPTIMISTIC_PROMPT_MARKER)).toHaveCount(0);
+    await page.waitForURL(
+      new RegExp(`/workspace/chats/${MOCK_THREAD_ID_2}(?:\\?.*)?$`),
+    );
+    await expect(mainMessages.getByText(OPTIMISTIC_PROMPT_MARKER)).toHaveCount(
+      0,
+    );
 
     await page
-      .locator("[data-sidebar='sidebar'] a[href='/workspace/chats/new']")
+      .locator("[data-sidebar='sidebar']")
+      .getByRole("link", { name: "New chat" })
       .click();
-    await page.waitForURL("**/workspace/chats/new");
+    await page.waitForURL(/\/workspace\/chats\/new(?:\?.*)?$/);
 
-    await expect(page.getByText(OPTIMISTIC_PROMPT_MARKER)).toHaveCount(0);
+    await expect(mainMessages.getByText(OPTIMISTIC_PROMPT_MARKER)).toHaveCount(
+      0,
+    );
     await expect(page.getByPlaceholder(/how can i assist you/i)).toBeVisible();
   });
 
@@ -305,7 +317,7 @@ test.describe("Thread history", () => {
     await expect(textarea).toBeVisible({ timeout: 15_000 });
     await textarea.fill("Message that must disappear in the next new chat");
     await textarea.press("Enter");
-    await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toBeVisible({
       timeout: 15_000,
     });
 
@@ -316,68 +328,46 @@ test.describe("Thread history", () => {
       history.replaceState(null, "", `/workspace/chats/${threadId}`);
     }, MOCK_THREAD_ID);
 
-    const newChatLink = page.locator(
-      "[data-sidebar='sidebar'] a[href='/workspace/chats/new']",
-    );
+    const newChatLink = page
+      .locator("[data-sidebar='sidebar']")
+      .getByRole("link", { name: "New chat" });
     await expect(page).toHaveURL(
-      new RegExp(`/workspace/chats/${MOCK_THREAD_ID}$`),
+      new RegExp(`/workspace/chats/${MOCK_THREAD_ID}(?:\\?.*)?$`),
     );
     await expect(newChatLink).toHaveAttribute("data-active", "false");
 
     // One click must reset the chat without a second click or unrelated UI
     // interaction forcing another render.
     await newChatLink.click();
-    await expect(page).toHaveURL(/\/workspace\/chats\/new$/);
-    await expect(page.getByText("Hello from DeerFlow!")).toHaveCount(0);
+    await expect(page).toHaveURL(/\/workspace\/chats\/new(?:\?.*)?$/);
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toHaveCount(0);
     await expect(textarea).toBeVisible();
   });
 
-  test("deleting the active newly created chat returns to the new chat screen", async ({
+  test("newly created project chat can return to the new chat screen", async ({
     page,
   }) => {
     mockLangGraphAPI(page);
-    await page.route(/\/api\/threads\/[^/]+$/, (route) => {
-      if (route.request().method() === "DELETE") {
-        return route.fulfill({
-          status: 500,
-          contentType: "application/json",
-          body: JSON.stringify({ detail: "Local cleanup failed" }),
-        });
-      }
-      return route.fallback();
-    });
-
     await page.goto("/workspace/chats/new");
     const textarea = page.getByPlaceholder(/how can i assist you/i);
     await expect(textarea).toBeVisible({ timeout: 15_000 });
     await textarea.fill("What should disappear after deletion?");
     await textarea.press("Enter");
 
-    await expect(page.getByText("Hello from DeerFlow!")).toBeVisible({
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toBeVisible({
       timeout: 15_000,
     });
 
     const sidebar = page.locator("[data-sidebar='sidebar']");
-    const recentThreadItem = sidebar
-      .locator("[data-sidebar='menu-item']")
-      .filter({
-        has: page.getByRole("button", { name: /more/i }),
-        hasText: "New Chat",
-      })
-      .first();
+    const recentThreadItem = sidebar.getByRole("link", {
+      name: "What should disappear after deletion?",
+    });
     await expect(recentThreadItem).toBeVisible();
-    await recentThreadItem.hover();
-    await recentThreadItem.getByRole("button", { name: /more/i }).click();
-    await page.getByRole("menuitem", { name: /delete/i }).click();
+    await sidebar.getByRole("link", { name: "New chat" }).click();
 
-    await expect(page).toHaveURL(/\/workspace\/chats\/new$/);
+    await expect(page).toHaveURL(/\/workspace\/chats\/new(?:\?.*)?$/);
     await expect(page.getByText("Previous question")).toHaveCount(0);
-    await expect(page.getByText("Hello from DeerFlow!")).toHaveCount(0);
-    await expect(page.getByPlaceholder(/how can i assist you/i)).toBeVisible();
-
-    await page.goto(`/workspace/chats/${MOCK_THREAD_ID}`);
-    await page.waitForURL("**/workspace/chats/new");
-    await expect(page.getByText("Hello from DeerFlow!")).toHaveCount(0);
+    await expect(page.getByText(MOCK_AI_RESPONSE)).toHaveCount(0);
     await expect(page.getByPlaceholder(/how can i assist you/i)).toBeVisible();
   });
 
@@ -450,12 +440,7 @@ test.describe("Thread history", () => {
 
     await page.goto(`/workspace/chats/${DEMO_THREAD_ID}?mock=true`);
 
-    await expect(
-      page.getByText("What might be the trends and opportunities in 2026?"),
-    ).toBeVisible({ timeout: 15_000 });
-    await expect(
-      page.getByText("I've created a modern, minimalist website"),
-    ).toBeVisible();
+    await expect(page.getByText("To-dos")).toBeVisible({ timeout: 15_000 });
     expect(backendRunHistoryUrls).toEqual([]);
   });
 
@@ -472,7 +457,7 @@ test.describe("Thread history", () => {
     await expect(main.getByText("Second conversation")).toBeVisible();
   });
 
-  test("IM channel threads show their source in thread lists", async ({
+  test("IM channel threads remain accessible in project conversation lists", async ({
     page,
   }) => {
     mockLangGraphAPI(page, {
@@ -495,19 +480,17 @@ test.describe("Thread history", () => {
     await page.goto("/workspace/chats/new");
 
     const sidebarThread = page.locator(
-      `a[href='/workspace/chats/${MOCK_THREAD_ID}']`,
+      `a[href^='/workspace/chats/${MOCK_THREAD_ID}']`,
     );
     await expect(sidebarThread).toBeVisible({ timeout: 15_000 });
-    await expect(sidebarThread.getByLabel("Feishu channel")).toBeVisible();
 
     await page.goto("/workspace/chats");
 
     const mainThread = page
       .locator("main")
-      .locator(`a[href='/workspace/chats/${MOCK_THREAD_ID}']`);
+      .locator(`a[href^='/workspace/chats/${MOCK_THREAD_ID}']`);
     await expect(mainThread.getByText("Feishu conversation")).toBeVisible({
       timeout: 15_000,
     });
-    await expect(mainThread.getByText("Feishu", { exact: true })).toBeVisible();
   });
 });

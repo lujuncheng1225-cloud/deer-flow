@@ -41,7 +41,7 @@ test.describe("Branch from turn", () => {
       ],
     });
 
-    await page.goto(`/workspace/chats/${MOCK_THREAD_ID}`);
+    await page.goto(`/workspace/chats/${MOCK_THREAD_ID}?project=e2e`);
 
     const targetTurn = page
       .locator("[data-assistant-turn]")
@@ -54,13 +54,16 @@ test.describe("Branch from turn", () => {
       .click();
 
     await expect(page).toHaveURL(
-      new RegExp(`/workspace/chats/${MOCK_THREAD_ID_2}$`),
+      new RegExp(`/workspace/chats/${MOCK_THREAD_ID_2}(?:\\?.*)?$`),
+      { timeout: 15_000 },
     );
     await expect(page.getByText("Second answer")).toBeVisible();
     const branchThreadLink = page.locator(
-      `a[href="/workspace/chats/${MOCK_THREAD_ID_2}"]`,
+      `a[href^="/workspace/chats/${MOCK_THREAD_ID_2}"]`,
     );
-    await expect(branchThreadLink).toContainText("Original chat");
+    await expect(branchThreadLink).toContainText("Original chat", {
+      timeout: 15_000,
+    });
     await expect(branchThreadLink).not.toContainText("Branch:");
   });
 });

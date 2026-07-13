@@ -1175,17 +1175,17 @@ export function useThreadStream({
     );
   }, [displayThreadId, isMock, queryClient, thread, threadId]);
 
-  const hasVisibleStreamState =
-    thread.isLoading && liveMessagesThreadId === currentViewThreadId;
+  const hasVisibleThreadState = onStreamThreadId === currentViewThreadId;
+  const hasVisibleLiveMessages = liveMessagesThreadId === currentViewThreadId;
   const persistedMessages = useMemo(
     () =>
-      hasVisibleStreamState
+      hasVisibleLiveMessages
         ? thread.messages.filter(
             (message) =>
               !message.id || !pendingSupersededMessageIds.has(message.id),
           )
         : [],
-    [hasVisibleStreamState, pendingSupersededMessageIds, thread.messages],
+    [hasVisibleLiveMessages, pendingSupersededMessageIds, thread.messages],
   );
   const visibleHistory = useMemo(
     () => (threadId ? history : []),
@@ -1683,7 +1683,7 @@ export function useThreadStream({
   const mergedThread = {
     ...thread,
     stop: stopThread,
-    values: hasVisibleStreamState ? thread.values : EMPTY_THREAD_VALUES,
+    values: hasVisibleThreadState ? thread.values : EMPTY_THREAD_VALUES,
     messages: mergedMessages,
   } as typeof thread;
 
@@ -1720,6 +1720,7 @@ export function useThreadHistory(
   const [loading, setLoading] = useState(false);
   const [messageRows, setMessageRows] = useState<RunMessage[]>([]);
   const [appendedMessages, setAppendedMessages] = useState<Message[]>([]);
+  const [historyThreadId, setHistoryThreadId] = useState("");
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
 
   const supersededRunIds = useMemo(() => {
@@ -1789,6 +1790,7 @@ export function useThreadHistory(
         const _messages = result.filter(
           (m) => !m.metadata.caller?.startsWith("middleware:"),
         );
+        setHistoryThreadId(requestThreadId);
         setMessageRows((prev) =>
           dedupeRunMessagesByIdentity(
             sortRunMessagesByTimeline([..._messages, ...prev]),
@@ -1833,6 +1835,7 @@ export function useThreadHistory(
       setLoading(false);
       setMessageRows([]);
       setAppendedMessages([]);
+      setHistoryThreadId("");
       setHasMoreHistory(false);
     }
 
@@ -1846,6 +1849,7 @@ export function useThreadHistory(
   }, [enabled, threadId, runs.data, loadMessages]);
 
   const appendMessages = useCallback((_messages: Message[]) => {
+    setHistoryThreadId(threadIdRef.current);
     setAppendedMessages((prev) => {
       return dedupeMessagesByIdentity([...prev, ..._messages]);
     });
@@ -1860,7 +1864,7 @@ export function useThreadHistory(
   const hasMore = enabled && hasThreadId && hasMoreHistory;
   return {
     runs: runs.data,
-    messages,
+    messages: historyThreadId === threadId ? messages : [],
     loading: loading || isRunsLoading || isRunsUnresolved,
     appendMessages,
     hasMore,

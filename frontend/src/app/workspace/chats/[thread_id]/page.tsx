@@ -288,15 +288,29 @@ export default function ChatPage() {
           messageId,
           messageIds,
         });
+        await ensureConversation(
+          response.thread_id,
+          thread.values.title || "新对话",
+        );
         toast.success(t.conversation.branchCreated);
-        router.push(`/workspace/chats/${response.thread_id}`);
+        router.push(workspacePath(`/workspace/chats/${response.thread_id}`));
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : t.conversation.branchFailed,
         );
       }
     },
-    [branchThread, isMock, isNewThread, router, t, threadId],
+    [
+      branchThread,
+      ensureConversation,
+      isMock,
+      isNewThread,
+      router,
+      t,
+      thread.values.title,
+      threadId,
+      workspacePath,
+    ],
   );
 
   const tokenUsageInlineMode = tokenUsageEnabled

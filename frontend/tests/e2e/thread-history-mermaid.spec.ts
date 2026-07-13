@@ -81,6 +81,32 @@ test("historical run messages preview labelled dotted Mermaid arrows", async ({
         }),
       }),
   );
+  await page.route(
+    new RegExp(`/api/threads/${MOCK_THREAD_ID}/messages(?:\\?|$)`),
+    (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            thread_id: MOCK_THREAD_ID,
+            run_id: MOCK_RUN_ID,
+            event_type: "llm.ai.response",
+            category: "message",
+            content: {
+              content: mermaidContent,
+              additional_kwargs: {},
+              response_metadata: {},
+              type: "ai",
+              id: "lc_run--issue-3193",
+            },
+            seq: 720,
+            created_at: "2026-05-24T04:47:01.123949+00:00",
+            metadata: { caller: "lead_agent" },
+          },
+        ]),
+      }),
+  );
 
   await page.goto(`/workspace/chats/${MOCK_THREAD_ID}`);
 
