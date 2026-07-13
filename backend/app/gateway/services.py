@@ -179,9 +179,9 @@ _COMPETITOR_APP_CODES = {
     "canva": "Canva",
 }
 _COMPETITOR_PLATFORM_NAMES = {
-    "2": "iOS",
-    "3": "Google Play",
-    "4": "PC-Web",
+    "2": "iOS/macOS",
+    "3": "Google",
+    "4": "PC/Web",
 }
 _COMPETITOR_REGION_TERMS = {
     "us": "US",
@@ -227,9 +227,6 @@ def _competitor_price_request_from_text(text: str) -> dict[str, Any] | None:
         if term in lowered or term in text:
             region = code
             break
-    if not region:
-        return None
-
     platform_terms = {
         "2": ("ios", "iphone", "app store", "苹果"),
         "3": ("google", "google play", "android", "安卓", "谷歌"),
@@ -243,7 +240,8 @@ def _competitor_price_request_from_text(text: str) -> dict[str, Any] | None:
 
 
 def _compact_commodity_price_result(result: dict[str, Any]) -> dict[str, Any]:
-    first = (result.get("sample_records") or [{}])[0]
+    records = result.get("sample_records") or []
+    first = records[0] if records else {}
     return {
         "query": (result.get("pulled_fields") or {}).get("查询参数"),
         "runtime_status": result.get("runtime_status"),
@@ -254,6 +252,7 @@ def _compact_commodity_price_result(result: dict[str, Any]) -> dict[str, Any]:
         "observed_at": result.get("observed_at"),
         "primary_evidence_ref": first.get("primary_evidence_ref"),
         "price_summary": first.get("price_summary"),
+        "records": records,
         "blockers": result.get("blockers") or [],
     }
 
@@ -261,15 +260,17 @@ def _compact_commodity_price_result(result: dict[str, Any]) -> dict[str, Any]:
 def _format_commodity_price_preflight_message(
     *,
     app_code: str,
-    region: str,
+    region: str | None,
     results: list[dict[str, Any]],
 ) -> str:
-    successful = [item for item in results if item.get("can_enter_evidence")]
+    has_records = any(int(item.get("sample_count") or 0) > 0 for item in results)
+    all_queries_succeeded = bool(results) and all(item.get("runtime_status") == "ready" for item in results)
+    requested_scope = region or "all currently covered regions"
     lines = [
         "<meitu-commodity-center-competitor-price-preflight>",
         "Platform preflight executed before DeerFlow planning for a competitor pricing request.",
         "Source/tool: meitu-commodity-center-competitor-price-query via Meitu internal API.",
-        f"Requested app/region: {app_code}/{region}.",
+        f"Requested app/region: {app_code}/{requested_scope}.",
         "Governance: subscription_image_urls or primary_evidence_ref is primary evidence; price_summary/price_items are machine_parsed_candidate only, not platform truth.",
         "Do not treat tool success, runtime success, or candidate_status as a platform fact.",
     ]
@@ -283,20 +284,30 @@ def _format_commodity_price_preflight_message(
             f"sample_count={item.get('sample_count')}, "
             f"observed_at={item.get('observed_at') or 'unknown'}."
         )
-        if item.get("price_summary"):
-            lines.append(f"  candidate_price_summary: {item['price_summary']}")
-        if item.get("primary_evidence_ref"):
-            lines.append(f"  primary_evidence_ref: {item['primary_evidence_ref']}")
+        for record in item.get("records") or []:
+            lines.append(
+                "  internal_record: "
+                f"scope={record.get('query_scope') or 'unknown'}; "
+                f"sync_date={record.get('sync_date') or 'unknown'}; "
+                f"candidate_price_summary={record.get('price_summary') or 'none'}; "
+                f"primary_evidence_ref={record.get('primary_evidence_ref') or 'none'}."
+            )
         blockers = item.get("blockers") or []
         if blockers:
             lines.append("  blockers: " + "；".join(str(blocker) for blocker in blockers[:3]))
-    if successful:
+    if has_records:
         lines.append(
-            "Instruction: answer from the Commodity Center result first. Do not run public web_search, browser fetch, app-store fetch, or deep-research fallback unless the user explicitly asks for public verification."
+            "Instruction: answer from every returned Commodity Center record first and state the covered "
+            "platforms/regions. Do not run public web_search, browser fetch, app-store fetch, or deep-research "
+            "fallback; tell the user that public search can supplement uncovered information on request."
+        )
+    elif all_queries_succeeded:
+        lines.append(
+            "Instruction: every Commodity Center query completed successfully but returned no records. Run public web_search as the permitted fallback, and clearly state that Commodity Center had no current records."
         )
     else:
         lines.append(
-            "Instruction: report the exact Commodity Center app/platform/region coverage gap. Use public web_search only if the user explicitly requested fallback verification."
+            "Instruction: report the exact Commodity Center availability gap. Do not run public web_search because at least one internal query failed; failure is not evidence of missing internal records."
         )
     lines.append("</meitu-commodity-center-competitor-price-preflight>")
     return "\n".join(lines)
@@ -321,14 +332,15 @@ async def maybe_inject_commodity_center_price_preflight(graph_input: Any) -> Any
 
     base_url = os.getenv("MEITU_API_INTERNAL_BASE_URL", "http://127.0.0.1:18010").rstrip("/")
     endpoint = f"{base_url}/external-signals/commodity-center/price-query"
-    queries = [
-        {
+    queries = []
+    for platform in request_spec["platforms"]:
+        payload = {
             "competitionAppCode": request_spec["competitionAppCode"],
             "platform": platform,
-            "region": request_spec["region"],
         }
-        for platform in request_spec["platforms"]
-    ]
+        if request_spec["region"] is not None:
+            payload["region"] = request_spec["region"]
+        queries.append(payload)
 
     async def _query(client: httpx.AsyncClient, payload: dict[str, str]) -> dict[str, Any]:
         try:
@@ -338,7 +350,7 @@ async def maybe_inject_commodity_center_price_preflight(graph_input: Any) -> Any
         except Exception as exc:
             platform_name = _COMPETITOR_PLATFORM_NAMES.get(payload["platform"], payload["platform"])
             return {
-                "query": f"{payload['competitionAppCode']}/{platform_name}/{payload['region']}",
+                "query": f"{payload['competitionAppCode']}/{platform_name}/{payload.get('region') or 'all-regions'}",
                 "runtime_status": "blocked",
                 "pull_status": "blocked",
                 "can_enter_evidence": False,

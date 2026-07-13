@@ -296,7 +296,7 @@ async def test_competitor_price_preflight_injects_commodity_center_context(monke
     assert "meitu-commodity-center-competitor-price-query" in result["messages"][0].content
     assert "Remini/Google/US" in result["messages"][0].content
     assert "Pro / 1年 / US$74.99" in result["messages"][0].content
-    assert "primary_evidence_ref: https://platform-media.meitudata.com/remini.jpg" in result["messages"][0].content
+    assert "primary_evidence_ref=https://platform-media.meitudata.com/remini.jpg" in result["messages"][0].content
     assert "Do not run public web_search" in result["messages"][0].content
     assert result["messages"][1].content == "查询remini的美国地区定价"
 
@@ -345,7 +345,104 @@ async def test_competitor_price_preflight_uses_explicit_ios_platform(monkeypatch
     )
 
     assert calls == [{"competitionAppCode": "Remini", "platform": "2", "region": "US"}]
-    assert "report the exact Commodity Center app/platform/region coverage gap" in result["messages"][0].content
+    assert "Run public web_search as the permitted fallback" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_competitor_price_preflight_queries_all_platforms_and_omits_region(monkeypatch):
+    from langchain_core.messages import HumanMessage
+
+    import app.gateway.services as services
+
+    calls = []
+
+    class _FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "runtime_status": "ready",
+                "pull_status": "blocked",
+                "can_enter_evidence": False,
+                "sample_count": 0,
+                "pulled_fields": {"resolution_status": "all_regions_query"},
+                "sample_records": [],
+                "blockers": ["没有拉取到可用商品中心竞品价格记录。"],
+            }
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, _url, json):
+            calls.append(json)
+            return _FakeResponse()
+
+    monkeypatch.setattr(services.httpx, "AsyncClient", _FakeAsyncClient)
+
+    result = await services.maybe_inject_commodity_center_price_preflight(
+        {"messages": [HumanMessage(content="查询 Remini 的订阅价格")]}
+    )
+
+    assert calls == [
+        {"competitionAppCode": "Remini", "platform": "2"},
+        {"competitionAppCode": "Remini", "platform": "3"},
+        {"competitionAppCode": "Remini", "platform": "4"},
+    ]
+    assert "all currently covered regions" in result["messages"][0].content
+    assert "Run public web_search as the permitted fallback" in result["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_competitor_price_preflight_does_not_fallback_when_internal_query_fails(monkeypatch):
+    from langchain_core.messages import HumanMessage
+
+    import app.gateway.services as services
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, _url, json):
+            if json["platform"] == "3":
+                raise services.httpx.ConnectError("commodity unavailable")
+
+            class _Response:
+                def raise_for_status(self):
+                    return None
+
+                def json(self):
+                    return {
+                        "runtime_status": "ready",
+                        "pull_status": "blocked",
+                        "can_enter_evidence": False,
+                        "sample_count": 0,
+                        "sample_records": [],
+                        "blockers": ["没有拉取到可用商品中心竞品价格记录。"],
+                    }
+
+            return _Response()
+
+    monkeypatch.setattr(services.httpx, "AsyncClient", _FakeAsyncClient)
+
+    result = await services.maybe_inject_commodity_center_price_preflight(
+        {"messages": [HumanMessage(content="查询 Remini 的订阅价格")]}
+    )
+
+    assert "Do not run public web_search" in result["messages"][0].content
 
 
 @pytest.mark.asyncio
