@@ -197,8 +197,7 @@ export const zhCN: Translations = {
       },
       {
         suggestion: "知识检索",
-        prompt:
-          "检索[主题]相关的已发布内部知识，并列出来源、适用范围和限制。",
+        prompt: "检索[主题]相关的已发布内部知识，并列出来源、适用范围和限制。",
         icon: BookOpenCheckIcon,
       },
       {
@@ -744,7 +743,8 @@ export const zhCN: Translations = {
     },
     channels: {
       title: "渠道",
-      description: "连接可在浏览器外向 美图商业化 aios 发送消息的即时通讯账号。",
+      description:
+        "连接可在浏览器外向 美图商业化 aios 发送消息的即时通讯账号。",
       disabled:
         "当前服务器未启用渠道连接。请联系管理员开启 channel_connections。",
     },

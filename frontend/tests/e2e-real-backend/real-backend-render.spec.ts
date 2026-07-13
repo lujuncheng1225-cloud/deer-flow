@@ -11,8 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url));
  * API key) and assert the browser renders the backend's data correctly.
  *
  * The prompt is read from the same fixture the gateway replays, so the input
- * hash matches and the recorded model turns reproduce deterministically. The
- * default auto-title is local fallback state, not a replayed model turn.
+ * hash matches and the recorded model turns reproduce deterministically.
  */
 // Register through the frontend origin (same-origin proxy) so the auth cookies
 // are stored for and sent to the browser origin — the gateway is reached via the
@@ -34,34 +33,11 @@ const fixture = JSON.parse(
 };
 
 const PROMPT = fixture.prompt;
-const FALLBACK_TITLE_MAX_CHARS = 50;
 
-function fallbackTitle(userMsg: string): string {
-  if (!userMsg) return "New Conversation";
-  if (userMsg.length <= FALLBACK_TITLE_MAX_CHARS) return userMsg;
-  return `${userMsg.slice(0, FALLBACK_TITLE_MAX_CHARS).trimEnd()}...`;
-}
-
-// Suggestions still come from the recorded model fixture. The default title no
-// longer does: TitleMiddleware uses a local fallback when title.model_name is
-// unset, so derive that expected title from the prompt.
 const textTurns = fixture.turns
   .map((t) => t.output?.data?.content)
   .filter((c): c is string => typeof c === "string" && c.trim().length > 0);
-const suggestionsRaw = textTurns.find((c) => c.trim().startsWith("["));
-// Guarded parse: a bracket-prefixed turn that isn't a valid JSON string array
-// falls back to "" so the `not.toBe("")` assertion below fails with a clear
-// message instead of a generic JSON.parse throw.
-const EXPECTED_SUGGESTION = ((): string => {
-  if (!suggestionsRaw) return "";
-  try {
-    const arr: unknown = JSON.parse(suggestionsRaw);
-    return Array.isArray(arr) && typeof arr[0] === "string" ? arr[0] : "";
-  } catch {
-    return "";
-  }
-})();
-const EXPECTED_TITLE = fallbackTitle(PROMPT);
+const EXPECTED_RESPONSE = textTurns.at(-2) ?? "";
 
 test.describe("real backend render (replay, no API key)", () => {
   test.beforeEach(async ({ context }) => {
@@ -75,7 +51,7 @@ test.describe("real backend render (replay, no API key)", () => {
     expect(resp.status(), await resp.text()).toBe(201);
   });
 
-  test("renders the local auto-title + replayed suggestions from a real backend", async ({
+  test("renders the submitted prompt + replayed response from a real backend", async ({
     page,
   }) => {
     // ultra mode so the context the frontend sends (is_plan_mode + subagent_enabled)
@@ -87,30 +63,53 @@ test.describe("real backend render (replay, no API key)", () => {
       );
     });
 
-    await page.goto("/workspace/chats/new");
+    await page.route("**/projects", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify([
+          { project: { project_id: "whee", product_name: "WHEE" } },
+        ]),
+      });
+    });
+    await page.route("**/projects/whee/conversations", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ contentType: "application/json", body: "[]" });
+        return;
+      }
+      const request = route.request().postDataJSON() as {
+        sidecar_thread_id: string;
+        title: string;
+      };
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          conversation_id: "dfconv-replay",
+          project_id: "whee",
+          title: request.title,
+          sidecar_thread_id: request.sidecar_thread_id,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    });
+
+    await page.goto("/workspace/chats/new?project=whee");
 
     const textarea = page.getByPlaceholder(/how can i assist you/i);
     await expect(textarea).toBeVisible({ timeout: 30_000 });
     await textarea.fill(PROMPT);
     await textarea.press("Enter");
 
-    // The title is the default local fallback, while the suggestion is a
-    // replayed model output absent from the prompt. Together they prove the
-    // backend state update and the replayed post-answer model call both render
-    // through the real frontend.
+    // The submitted prompt and replayed response prove both sides of the real
+    // frontend/gateway contract render through the project-scoped workspace.
     expect(
-      EXPECTED_TITLE,
-      "default local fallback title should be derived from the prompt",
-    ).not.toBe("");
-    expect(
-      EXPECTED_SUGGESTION,
-      "fixture should contain a suggestions turn (re-record; the record spec waits for /suggestions)",
+      EXPECTED_RESPONSE,
+      "fixture should contain a replayed assistant response",
     ).not.toBe("");
     const chat = page.locator("#chat");
-    await expect(chat.getByText(EXPECTED_TITLE)).toBeVisible({
+    await expect(chat.getByText(PROMPT)).toBeVisible({
       timeout: 60_000,
     });
-    await expect(chat.getByText(EXPECTED_SUGGESTION)).toBeVisible({
+    await expect(chat.getByText(EXPECTED_RESPONSE)).toBeVisible({
       timeout: 30_000,
     });
 

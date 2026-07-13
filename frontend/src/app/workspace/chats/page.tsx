@@ -15,12 +15,8 @@ import { formatTimeAgo } from "@/core/utils/datetime";
 
 export default function ChatsPage() {
   const { t } = useI18n();
-  const {
-    activeProject,
-    conversations,
-    conversationsLoading,
-    workspacePath,
-  } = useProjectScope();
+  const { activeProject, conversations, conversationsLoading, workspacePath } =
+    useProjectScope();
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -57,7 +53,9 @@ export default function ChatsPage() {
                   请先选择项目，再查看项目会话。
                 </p>
               ) : conversationsLoading ? (
-                <p className="text-muted-foreground p-4 text-sm">加载项目会话中…</p>
+                <p className="text-muted-foreground p-4 text-sm">
+                  加载项目会话中…
+                </p>
               ) : filteredConversations.length === 0 ? (
                 <p className="text-muted-foreground p-4 text-sm">
                   当前项目没有匹配的会话。
@@ -71,7 +69,9 @@ export default function ChatsPage() {
                     )}
                   >
                     <div className="flex flex-col gap-2 border-b p-4">
-                      <div className="min-w-0 truncate">{conversation.title}</div>
+                      <div className="min-w-0 truncate">
+                        {conversation.title}
+                      </div>
                       <div className="text-muted-foreground text-sm">
                         {formatTimeAgo(conversation.updated_at)}
                       </div>

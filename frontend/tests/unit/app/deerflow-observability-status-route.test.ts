@@ -50,9 +50,7 @@ describe("/deerflow/observability/status route", () => {
     const body = await response.json();
     const [url, init] = fetchSpy.mock.calls[0] ?? [];
 
-    expect(url).toBe(
-      "http://127.0.0.1:19010/deerflow/observability/status",
-    );
+    expect(url).toBe("http://127.0.0.1:19010/deerflow/observability/status");
     expect(init).toMatchObject({
       cache: "no-store",
       headers: {

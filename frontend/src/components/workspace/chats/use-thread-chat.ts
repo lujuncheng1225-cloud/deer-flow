@@ -24,6 +24,14 @@ export function resetThreadChatAfterDelete(detail: ThreadChatResetDetail) {
   );
 }
 
+export function resetThreadChatForNewConversation(nextPath: string) {
+  resetThreadChatAfterDelete({
+    deletedThreadId: "",
+    nextPath,
+    force: true,
+  });
+}
+
 export function useThreadChat() {
   const { thread_id: threadIdFromPath } = useParams<{ thread_id: string }>();
   const pathname = usePathname();

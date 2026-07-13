@@ -76,7 +76,8 @@ export function ProjectScopeProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedProjectParam = searchParams.get("project")?.trim() ?? null;
-  const selectedProjectId = selectedProjectParam === "" ? null : selectedProjectParam;
+  const selectedProjectId =
+    selectedProjectParam === "" ? null : selectedProjectParam;
   const [projects, setProjects] = useState<PlatformProject[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -93,7 +94,9 @@ export function ProjectScopeProvider({ children }: { children: ReactNode }) {
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setProjectsError(error instanceof Error ? error.message : "项目列表读取失败");
+          setProjectsError(
+            error instanceof Error ? error.message : "项目列表读取失败",
+          );
         }
       })
       .finally(() => {

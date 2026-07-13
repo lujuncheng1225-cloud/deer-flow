@@ -34,6 +34,40 @@ test.describe("Workspace changes", () => {
       ],
     });
     await page.route(
+      new RegExp(`/api/threads/${THREAD_ID}/messages(?:\\?|$)`),
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([
+            {
+              run_id: RUN_ID,
+              seq: 1,
+              content: {
+                type: "human",
+                id: "msg-human-workspace-changes",
+                content: [{ type: "text", text: "Create a report" }],
+                run_id: RUN_ID,
+              },
+              metadata: { caller: "lead_agent" },
+              created_at: "2026-07-04T10:00:00Z",
+            },
+            {
+              run_id: RUN_ID,
+              seq: 2,
+              content: {
+                type: "ai",
+                id: "msg-ai-workspace-changes",
+                content: "I updated the workspace report.",
+                run_id: RUN_ID,
+              },
+              metadata: { caller: "lead_agent" },
+              created_at: "2026-07-04T10:00:01Z",
+            },
+          ]),
+        }),
+    );
+    await page.route(
       `**/api/threads/${THREAD_ID}/runs/${RUN_ID}/workspace-changes?*`,
       async (route) => {
         const url = new URL(route.request().url());

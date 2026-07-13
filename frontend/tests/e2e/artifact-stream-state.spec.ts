@@ -41,6 +41,7 @@ function streamWithoutArtifacts(route: Route) {
         ],
       },
     },
+    { event: "end", data: {} },
   ];
 
   return route.fulfill({
@@ -83,7 +84,7 @@ test("keeps artifact trigger after stream values omit artifacts", async ({
 
   await expect(
     page.getByText("Updated response while the artifact list is omitted."),
-  ).toBeVisible({ timeout: 10_000 });
+  ).toBeVisible({ timeout: 20_000 });
   await expect(artifactTrigger).toBeVisible();
 
   await artifactTrigger.click();

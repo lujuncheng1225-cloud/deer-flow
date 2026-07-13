@@ -17,6 +17,7 @@ import { useProjectScope } from "@/core/project-scope/context";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
+import { resetThreadChatForNewConversation } from "./chats/use-thread-chat";
 import { ProjectScopePicker } from "./project-scope-picker";
 
 export function WorkspaceHeader({ className }: { className?: string }) {
@@ -24,6 +25,7 @@ export function WorkspaceHeader({ className }: { className?: string }) {
   const { state } = useSidebar();
   const pathname = usePathname();
   const { workspacePath } = useProjectScope();
+  const newChatPath = workspacePath("/workspace/chats/new");
   return (
     <>
       <div
@@ -65,7 +67,8 @@ export function WorkspaceHeader({ className }: { className?: string }) {
           >
             <Link
               className="text-muted-foreground"
-              href={workspacePath("/workspace/chats/new")}
+              href={newChatPath}
+              onClick={() => resetThreadChatForNewConversation(newChatPath)}
             >
               <MessageSquarePlus size={16} />
               <span>{t.sidebar.newChat}</span>

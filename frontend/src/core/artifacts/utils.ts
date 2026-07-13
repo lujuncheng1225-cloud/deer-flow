@@ -42,7 +42,11 @@ export function urlOfArtifact({
 }) {
   const artifactPath = normalizeArtifactFilepath(filepath);
   if (isStaticWebsiteOnly()) {
-    return staticDemoArtifactURL({ filepath: artifactPath, threadId, download });
+    return staticDemoArtifactURL({
+      filepath: artifactPath,
+      threadId,
+      download,
+    });
   }
   if (isMock) {
     return `${getBackendBaseURL()}/mock/api/threads/${threadId}/artifacts${artifactPath}${download ? "?download=true" : ""}`;
