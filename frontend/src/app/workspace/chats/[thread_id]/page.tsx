@@ -23,6 +23,7 @@ import {
   MESSAGE_LIST_DEFAULT_PADDING_BOTTOM,
 } from "@/components/workspace/messages";
 import { ThreadContext } from "@/components/workspace/messages/context";
+import { ProjectScopePicker } from "@/components/workspace/project-scope-picker";
 import {
   SidecarProvider,
   SidecarTrigger,
@@ -43,6 +44,7 @@ import {
 import { isHiddenFromUIMessage } from "@/core/messages/utils";
 import { useModels } from "@/core/models/hooks";
 import { useNotification } from "@/core/notification/hooks";
+import { useProjectScope } from "@/core/project-scope/context";
 import { useLocalSettings, useThreadSettings } from "@/core/settings";
 import {
   useBranchThread,
@@ -60,6 +62,13 @@ export default function ChatPage() {
   const router = useRouter();
   const { threadId, setThreadId, isNewThread, setIsNewThread, isMock } =
     useThreadChat();
+  const {
+    activeProjectId,
+    conversationsLoading,
+    ensureConversation,
+    isThreadInActiveProject,
+    workspacePath,
+  } = useProjectScope();
   // `isNewThread` tracks whether the backend has the thread yet — gates the
   // SDK's history fetch (see issue #2746).  `isWelcomeMode` is the visual
   // welcome layout (centered input, hero, quick actions); we flip it to false
@@ -118,7 +127,11 @@ export default function ChatPage() {
     },
     onStart: (createdThreadId) => {
       // ! Important: Never use next.js router for navigation in this case, otherwise it will cause the thread to re-mount and lose all states. Use native history API instead.
-      history.replaceState(null, "", `/workspace/chats/${createdThreadId}`);
+      history.replaceState(
+        null,
+        "",
+        workspacePath(`/workspace/chats/${createdThreadId}`),
+      );
       setThreadId(createdThreadId);
       setIsNewThread(false);
     },
@@ -167,15 +180,63 @@ export default function ChatPage() {
     threadMetadata.isLoading,
   ]);
 
+  useEffect(() => {
+    if (
+      isNewThread ||
+      isMock ||
+      !activeProjectId ||
+      conversationsLoading ||
+      isThreadInActiveProject(threadId)
+    ) {
+      return;
+    }
+    router.replace(workspacePath("/workspace/chats/new"));
+  }, [
+    activeProjectId,
+    conversationsLoading,
+    isMock,
+    isNewThread,
+    isThreadInActiveProject,
+    router,
+    threadId,
+    workspacePath,
+  ]);
+
   const handleSubmit = useCallback(
-    (message: PromptInputMessage, options?: InputBoxSubmitOptions) => {
-      const sendPromise = sendMessage(threadId, message, undefined, options);
-      if (message.files.length > 0) {
-        return sendPromise;
+    async (message: PromptInputMessage, options?: InputBoxSubmitOptions) => {
+      if (!activeProjectId) {
+        toast.error("请先选择项目，再发起会话");
+        return;
       }
-      void sendPromise;
+      if (
+        !isNewThread &&
+        !conversationsLoading &&
+        !isThreadInActiveProject(threadId)
+      ) {
+        toast.error("当前会话不属于所选项目");
+        return;
+      }
+      try {
+        await ensureConversation(threadId, message.text);
+        await sendMessage(
+          threadId,
+          message,
+          { project_id: activeProjectId },
+          options,
+        );
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "项目会话创建失败");
+      }
     },
-    [sendMessage, threadId],
+    [
+      activeProjectId,
+      conversationsLoading,
+      ensureConversation,
+      isNewThread,
+      isThreadInActiveProject,
+      sendMessage,
+      threadId,
+    ],
   );
   const handleSubmitHumanInput = useCallback(
     async (request: HumanInputRequest, response: HumanInputResponse) => {
@@ -271,6 +332,7 @@ export default function ChatPage() {
               )}
             >
               <SidebarTrigger className="md:hidden" />
+              <ProjectScopePicker className="max-w-[calc(100vw-13rem)] md:hidden" />
               <div className="flex min-w-0 flex-1 items-center text-sm font-medium">
                 <ThreadTitle threadId={threadId} thread={thread} />
               </div>
@@ -395,6 +457,8 @@ export default function ChatPage() {
                       disabled={
                         isMock ||
                         env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" ||
+                        !activeProjectId ||
+                        conversationsLoading ||
                         isUploading ||
                         hasOpenHumanInputCard ||
                         (!isNewThread && isHistoryLoading)
