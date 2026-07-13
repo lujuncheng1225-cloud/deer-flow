@@ -65,8 +65,7 @@ export const enUS: Translations = {
   // Welcome
   welcome: {
     greeting: "Find clarity in complexity.",
-    description:
-      "Connect information and data to uncover what truly matters.",
+    description: "Connect information and data to uncover what truly matters.",
 
     createYourOwnSkill: "Create Your Own Skill",
     createYourOwnSkillDescription:
@@ -540,7 +539,8 @@ export const enUS: Translations = {
       slack: "Slack workspace messages and mentions.",
       discord: "Discord server messages through your 美图商业化 aios bot.",
       feishu: "Feishu and Lark messages through your 美图商业化 aios app.",
-      dingtalk: "DingTalk Stream Push messages through your 美图商业化 aios bot.",
+      dingtalk:
+        "DingTalk Stream Push messages through your 美图商业化 aios bot.",
       wechat: "WeChat iLink messages through your 美图商业化 aios bot.",
       wecom: "WeCom messages through your 美图商业化 aios AI bot.",
     },
@@ -575,7 +575,8 @@ export const enUS: Translations = {
     writeFile: "Write file",
     clickToViewContent: "Click to view file content",
     writeTodos: "Update to-do list",
-    skillInstallTooltip: "Install skill and make it available to 美图商业化 aios",
+    skillInstallTooltip:
+      "Install skill and make it available to 美图商业化 aios",
   },
 
   humanInput: {

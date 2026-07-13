@@ -158,7 +158,9 @@ export default function LoginPage() {
       return;
     }
     if (!localAuthEnabled) {
-      setError("Local email/password authentication is disabled. Use SSO/OA login.");
+      setError(
+        "Local email/password authentication is disabled. Use SSO/OA login.",
+      );
       setLoading(false);
       return;
     }

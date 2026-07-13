@@ -285,9 +285,7 @@ async def test_competitor_price_preflight_injects_commodity_center_context(monke
     monkeypatch.setenv("MEITU_API_INTERNAL_BASE_URL", "http://meitu-api.local")
     monkeypatch.setattr(services.httpx, "AsyncClient", _FakeAsyncClient)
 
-    result = await services.maybe_inject_commodity_center_price_preflight(
-        {"messages": [HumanMessage(content="查询remini的美国地区定价")]}
-    )
+    result = await services.maybe_inject_commodity_center_price_preflight({"messages": [HumanMessage(content="查询remini的美国地区定价")]})
 
     assert [payload["platform"] for _, payload in calls] == ["2", "3", "4"]
     assert calls[0][0] == "http://meitu-api.local/external-signals/commodity-center/price-query"
@@ -340,9 +338,7 @@ async def test_competitor_price_preflight_uses_explicit_ios_platform(monkeypatch
 
     monkeypatch.setattr(services.httpx, "AsyncClient", _FakeAsyncClient)
 
-    result = await services.maybe_inject_commodity_center_price_preflight(
-        {"messages": [HumanMessage(content="查询 Remini 美国 iOS 订阅价格")]}
-    )
+    result = await services.maybe_inject_commodity_center_price_preflight({"messages": [HumanMessage(content="查询 Remini 美国 iOS 订阅价格")]})
 
     assert calls == [{"competitionAppCode": "Remini", "platform": "2", "region": "US"}]
     assert "Run public web_search as the permitted fallback" in result["messages"][0].content
@@ -387,9 +383,7 @@ async def test_competitor_price_preflight_queries_all_platforms_and_omits_region
 
     monkeypatch.setattr(services.httpx, "AsyncClient", _FakeAsyncClient)
 
-    result = await services.maybe_inject_commodity_center_price_preflight(
-        {"messages": [HumanMessage(content="查询 Remini 的订阅价格")]}
-    )
+    result = await services.maybe_inject_commodity_center_price_preflight({"messages": [HumanMessage(content="查询 Remini 的订阅价格")]})
 
     assert calls == [
         {"competitionAppCode": "Remini", "platform": "2"},
@@ -438,9 +432,7 @@ async def test_competitor_price_preflight_does_not_fallback_when_internal_query_
 
     monkeypatch.setattr(services.httpx, "AsyncClient", _FakeAsyncClient)
 
-    result = await services.maybe_inject_commodity_center_price_preflight(
-        {"messages": [HumanMessage(content="查询 Remini 的订阅价格")]}
-    )
+    result = await services.maybe_inject_commodity_center_price_preflight({"messages": [HumanMessage(content="查询 Remini 的订阅价格")]})
 
     assert "Do not run public web_search" in result["messages"][0].content
 

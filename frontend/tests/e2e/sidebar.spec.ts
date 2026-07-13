@@ -51,11 +51,7 @@ test.describe("Sidebar navigation", () => {
     };
 
     await expectInsideViewport(
-      page
-        .getByText(
-          /Find clarity in complexity|从复杂里，找到答案/i,
-        )
-        .first(),
+      page.getByText(/Find clarity in complexity|从复杂里，找到答案/i).first(),
     );
     await expectInsideViewport(page.getByRole("textbox").first());
     await expectInsideViewport(page.locator("[data-slot='suggestions-list']"));

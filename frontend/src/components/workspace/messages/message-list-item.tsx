@@ -411,7 +411,9 @@ function MessageContent_({
           onTurnDurationChange={handleDurationChange}
         >
           <ReasoningTrigger />
-          <SafeReasoningContent>{reasoningContentToDisplay}</SafeReasoningContent>
+          <SafeReasoningContent>
+            {reasoningContentToDisplay}
+          </SafeReasoningContent>
         </Reasoning>
       </AIElementMessageContent>
     );

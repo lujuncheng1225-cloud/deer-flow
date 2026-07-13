@@ -111,9 +111,7 @@ describe("artifact URL helpers", () => {
     ).toBe(
       "/api/threads/thread-1/artifacts/mnt/user-data/outputs/1_1782357979311.jpg?download=true",
     );
-    expect(
-      resolveArtifactURL("1_1782357979311.jpg", "thread-1"),
-    ).toBe(
+    expect(resolveArtifactURL("1_1782357979311.jpg", "thread-1")).toBe(
       "/api/threads/thread-1/artifacts/mnt/user-data/outputs/1_1782357979311.jpg",
     );
   });

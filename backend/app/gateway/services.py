@@ -302,13 +302,9 @@ def _format_commodity_price_preflight_message(
             "fallback; tell the user that public search can supplement uncovered information on request."
         )
     elif all_queries_succeeded:
-        lines.append(
-            "Instruction: every Commodity Center query completed successfully but returned no records. Run public web_search as the permitted fallback, and clearly state that Commodity Center had no current records."
-        )
+        lines.append("Instruction: every Commodity Center query completed successfully but returned no records. Run public web_search as the permitted fallback, and clearly state that Commodity Center had no current records.")
     else:
-        lines.append(
-            "Instruction: report the exact Commodity Center availability gap. Do not run public web_search because at least one internal query failed; failure is not evidence of missing internal records."
-        )
+        lines.append("Instruction: report the exact Commodity Center availability gap. Do not run public web_search because at least one internal query failed; failure is not evidence of missing internal records.")
     lines.append("</meitu-commodity-center-competitor-price-preflight>")
     return "\n".join(lines)
 
@@ -377,10 +373,7 @@ async def maybe_inject_commodity_center_price_preflight(graph_input: Any) -> Any
         "commodity_price_preflight completed app_code=%s region=%s results=%s",
         request_spec["competitionAppCode"],
         request_spec["region"] or "all_currently_covered_regions",
-        ",".join(
-            f"{item.get('query') or 'unknown'}:{item.get('runtime_status')}/{item.get('sample_count', 0)}"
-            for item in results
-        ),
+        ",".join(f"{item.get('query') or 'unknown'}:{item.get('runtime_status')}/{item.get('sample_count', 0)}" for item in results),
     )
 
     system_message = SystemMessage(

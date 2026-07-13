@@ -12,7 +12,7 @@ let waved = false;
 
 function WelcomeDescription({ children }: { children: string }) {
   return (
-    <p className="max-w-lg text-pretty break-words whitespace-pre-line leading-5">
+    <p className="max-w-lg leading-5 text-pretty break-words whitespace-pre-line">
       {children}
     </p>
   );
