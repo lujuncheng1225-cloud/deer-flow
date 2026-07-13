@@ -321,6 +321,7 @@ async def maybe_inject_commodity_center_price_preflight(graph_input: Any) -> Any
     It only adds read-only context; it does not write evidence or final truth.
     """
     if os.getenv("MEITU_NATIVE_COMPETITOR_PRICE_PREFLIGHT_DISABLED") == "1":
+        logger.info("commodity_price_preflight skipped reason=disabled")
         return graph_input
 
     text = _latest_user_message_text(graph_input)
@@ -329,6 +330,13 @@ async def maybe_inject_commodity_center_price_preflight(graph_input: Any) -> Any
     request_spec = _competitor_price_request_from_text(text)
     if not request_spec:
         return graph_input
+
+    logger.info(
+        "commodity_price_preflight started app_code=%s region=%s platforms=%s",
+        request_spec["competitionAppCode"],
+        request_spec["region"] or "all_currently_covered_regions",
+        ",".join(request_spec["platforms"]),
+    )
 
     base_url = os.getenv("MEITU_API_INTERNAL_BASE_URL", "http://127.0.0.1:18010").rstrip("/")
     endpoint = f"{base_url}/external-signals/commodity-center/price-query"
@@ -364,6 +372,16 @@ async def maybe_inject_commodity_center_price_preflight(graph_input: Any) -> Any
 
     async with httpx.AsyncClient(timeout=3.0, follow_redirects=True) as client:
         results = await asyncio.gather(*(_query(client, payload) for payload in queries))
+
+    logger.info(
+        "commodity_price_preflight completed app_code=%s region=%s results=%s",
+        request_spec["competitionAppCode"],
+        request_spec["region"] or "all_currently_covered_regions",
+        ",".join(
+            f"{item.get('query') or 'unknown'}:{item.get('runtime_status')}/{item.get('sample_count', 0)}"
+            for item in results
+        ),
+    )
 
     system_message = SystemMessage(
         content=_format_commodity_price_preflight_message(
