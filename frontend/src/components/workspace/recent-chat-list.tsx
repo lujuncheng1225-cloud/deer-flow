@@ -16,12 +16,8 @@ import { useProjectScope } from "@/core/project-scope/context";
 
 export function RecentChatList() {
   const pathname = usePathname();
-  const {
-    activeProject,
-    conversations,
-    conversationsLoading,
-    workspacePath,
-  } = useProjectScope();
+  const { activeProject, conversations, conversationsLoading, workspacePath } =
+    useProjectScope();
 
   return (
     <SidebarGroup>
@@ -32,7 +28,9 @@ export function RecentChatList() {
             请先在顶部选择项目
           </p>
         ) : conversationsLoading ? (
-          <p className="text-muted-foreground px-2 py-1 text-xs">加载项目会话中…</p>
+          <p className="text-muted-foreground px-2 py-1 text-xs">
+            加载项目会话中…
+          </p>
         ) : conversations.length === 0 ? (
           <p className="text-muted-foreground px-2 py-1 text-xs">
             当前项目还没有会话

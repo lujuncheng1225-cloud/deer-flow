@@ -225,7 +225,9 @@ export default function ChatPage() {
           options,
         );
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "项目会话创建失败");
+        toast.error(
+          error instanceof Error ? error.message : "项目会话创建失败",
+        );
       }
     },
     [
