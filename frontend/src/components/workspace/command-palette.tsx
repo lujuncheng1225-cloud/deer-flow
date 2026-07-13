@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useI18n } from "@/core/i18n/hooks";
+import { useProjectScope } from "@/core/project-scope/context";
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts";
 
 import { SettingsDialog } from "./settings";
@@ -32,15 +33,16 @@ import { SettingsDialog } from "./settings";
 export function CommandPalette() {
   const { t } = useI18n();
   const router = useRouter();
+  const { workspacePath } = useProjectScope();
   const [open, setOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isMac, setIsMac] = useState(false);
 
   const handleNewChat = useCallback(() => {
-    router.push("/workspace/chats/new");
+    router.push(workspacePath("/workspace/chats/new"));
     setOpen(false);
-  }, [router]);
+  }, [router, workspacePath]);
 
   const handleOpenSettings = useCallback(() => {
     setOpen(false);

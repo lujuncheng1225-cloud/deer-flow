@@ -44,6 +44,17 @@ Frontend (Next.js) ──▶ LangGraph SDK ──▶ LangGraph Backend (lead_age
 
 The frontend is a stateful chat application. Users create **threads** (conversations), send messages, set thread-scoped `/goal` completion conditions, and receive streamed AI responses. The backend orchestrates agents that can produce **artifacts** (files/code), **todos**, and goal state updates.
 
+### Meitu project scope extension
+
+The production Workspace is project-scoped. `core/project-scope/` reads platform
+projects and project conversations through the Matrix rewrite paths. The sidebar,
+mobile chat header, recent-conversation list, and full conversation page must
+use this context; do not restore unfiltered LangGraph thread lists. Before the
+first native message is submitted, the frontend binds the generated sidecar
+thread ID to exactly one platform project. Preserve the `project` query
+parameter when navigating between Workspace chat routes, and pass the selected
+`project_id` in the run context.
+
 ### Source Layout (`src/`)
 
 - **`app/`** — Next.js App Router. Routes include `/` (landing), `/workspace/chats/[thread_id]` (chat), `/workspace/agents/[agent_name]` and `/workspace/agents/new` (custom agents), `/blog/…`, the `(auth)/{login,setup,auth/callback}` flow, `/[lang]/docs/…`, and `/api/…` route handlers (e.g. `/api/memory`).
